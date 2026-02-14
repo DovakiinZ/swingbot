@@ -1,0 +1,2 @@
+This file is required to be present (named LIVE_OK.txt) for live trading to be enabled.
+It acts as a secondary manual confirmation step.
