@@ -1,4 +1,5 @@
 import random
+import time
 import numpy as np
 from typing import List, Optional
 from storage.sqlite_store import SQLiteStore
@@ -15,33 +16,62 @@ class Bandit:
         # Cache stats logic... to be loaded on startup
 
     def update_stats(self):
-        # Query DB for arm performance
-        # Simplified: We select arm index, we need to track which arm used for each trade
-        # Then aggregate R-multiples for each arm.
-        # This requires DB query to get trade results grouped by params or 'arm_id'.
-        # For MVP: We assume we store arm_id in strategy_params inside DB or similar.
-        # But strategy_params is JSON.
-        # Let's assume we reload stats on every decision or periodically.
-        pass
+        """
+        Reconstructs arm stats from the database.
+        """
+        try:
+            conn = self.store.get_connection()
+            cursor = conn.cursor()
+            
+            # Reset
+            self.counts = [0] * self.n_arms
+            self.values = [0.0] * self.n_arms
+            
+            # Fetch all trades with valid arm_id
+            # Join trades with positions to get strategy_params/arm_id if needed, 
+            # but we assume arm_id is stored in positions or arm_performance table.
+            # Let's check arm_performance first.
+            cursor.execute("SELECT arm_id, r_multiple FROM arm_performance")
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                arm_id = int(row['arm_id'])
+                r = row['r_multiple']
+                
+                if 0 <= arm_id < self.n_arms:
+                    n = self.counts[arm_id]
+                    # Update average using online avg formula or sum
+                    # NewAvg = (OldAvg * n + NewVal) / (n+1)
+                    current_avg = self.values[arm_id]
+                    self.values[arm_id] = (current_avg * n + r) / (n + 1)
+                    self.counts[arm_id] += 1
+            
+            conn.close()
+            # print(f"Bandit Stats: {list(zip(self.counts, self.values))}")
+        except Exception as e:
+            print(f"Error updating bandit stats: {e}")
 
     def select_arm_index(self) -> int:
-        # Thompson Sampling requires Alpha/Beta distributions (Bernoulli rewards).
-        # R-multiple is continuous.
-        # We can use Epsilon-Greedy or Gaussian Thompson Sampling.
-        # Given small sample size, Epsilon-Greedy is safer/simpler or UCB1.
+        self.update_stats() # Sync before choice
         
-        # User requested Thompson Sampling.
-        # We model reward as Normal distribution N(mu, sigma).
-        # Sample from posterior for each arm, take max.
-        
-        # Mock logic for now since we need DB aggregation of R-multiples:
+        # Epsilon-Greedy
         if random.random() < self.epsilon:
             return random.randint(0, self.n_arms - 1)
-        
-        # Exploit: return best mean
-        # best_arm = np.argmax(self.values)
-        # return best_arm
-        
-        # Valid implementation would query DB for history of each arm
-        # Calculate mean R and variance?
-        return 0 # Default to arm 0 for now as we have no data
+            
+        # Exploit: Best mean R-multiple
+        # If all zero, random
+        if sum(self.counts) == 0:
+             return random.randint(0, self.n_arms - 1)
+             
+        # Add small noise to break ties
+        values_noisy = [v + random.normalvariate(0, 0.001) for v in self.values]
+        return int(np.argmax(values_noisy))
+
+    def record_outcome(self, arm_id: int, r_multiple: float, pnl_pct: float, outcome: str):
+        conn = self.store.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO arm_performance (arm_id, timestamp, r_multiple, pnl_percent, outcome) VALUES (?, ?, ?, ?, ?)", 
+                       (arm_id, int(time.time()*1000), r_multiple, pnl_pct, outcome))
+        conn.commit()
+        conn.close()
+

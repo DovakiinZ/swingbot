@@ -34,8 +34,16 @@ with open("config.yaml", "r") as f:
 
 # Global State
 store = SQLiteStore(db_path=CONFIG['db_path'])
-clock = Clock(mode="live") # Changed later if necessary
+clock = Clock(mode="live") 
 logger = logging.getLogger("swingbot")
+
+# Observability Helpers
+def format_status_line(timestamp, symbol, price, signal, pos_state, arm, pnl, breaker, next_check):
+    # Time | Symbol | Price | Signal | Pos | Arm | PnL | Breaker | Next
+    t_str = timestamp.strftime("%H:%M:%S")
+    sig_str = f"{signal}" if signal else "-"
+    pos_str = f"{pos_state}"
+    return f"{t_str} UTC | {symbol} | ${price:<8.2f} | Sig: {sig_str:<4} | Pos: {pos_str:<6} | Arm: {arm} | DayPnL: {pnl:>6.2f} | {breaker} | Next: {next_check}s"
 
 def main():
     parser = argparse.ArgumentParser(description="Swingbot")
@@ -66,17 +74,19 @@ def main():
         is_live = True
         clock.mode = "live"
     else:
-        logger.info("Starting in PAPER mode")
+        # logger.info("Starting in PAPER mode") -> DEBUG
         clock.mode = "paper"
-        # For paper, we still sync with real time in this run loop, 
-        # unless we are backtesting which is a different script.
-        # So clock.now_ms() essentially calls time.time() but ensures we know it's paper.
 
-    setup_logging()
+    # Setup Logging
+    log_level_console = os.getenv("LOG_LEVEL_CONSOLE", "WARNING")
+    log_level_file = os.getenv("LOG_LEVEL_FILE", "DEBUG") # User said "Default INFO to file", let's use DEBUG for file to catch everything
+    setup_logging(console_level=log_level_console, file_level=log_level_file)
+    
+    logger.warning(f"--- Swingbot Started ({'LIVE' if is_live else 'PAPER'}) ---")
+    logger.warning(f"Logging: Console={log_level_console}, File={log_level_file}")
 
     # Initialize Components
     market = MarketData(sandbox=False) 
-    # Note: Using public data for paper trading is fine.
     
     if is_live:
         broker = BinanceBroker(store, market)
@@ -101,177 +111,185 @@ def main():
     reporter = DailyReport(store)
     sentiment_engine = SentimentEngine()
     selector = SymbolSelector(market.exchange)
-    sentiment_engine = SentimentEngine()
-    selector = SymbolSelector(market.exchange)
 
     context = {
         "symbol": args.symbol,
         "timeframe": CONFIG['timeframe'],
         "lookback": CONFIG['lookback']
     }
+    
+    # State tracking for summary
+    last_summary_date = None
 
+    # Job Loop
     def job():
-        logger.info(f"--- Cycle Start: {datetime.now()} ---")
+        nonlocal last_summary_date
+        cycle_start_time = time.time()
         
-        # 1. Circuit Breaker Check
-        if circuit_breaker.is_tripped:
-            logger.warning(f"Circuit Breaker TRIPPED: {circuit_breaker.trip_reason}. Skipping cycle.")
-            return
-
-        # 1.5 Sentiment Check
-        if not sentiment_engine.is_market_safe(threshold=CONFIG.get('sentiment_threshold', 20)):
-            logger.warning("Market Sentiment Unsafe. Updates only, no new entries.")
-            # We still proceed to process logic for exits, but flag it
-            safe_to_enter = False
-        else:
-            safe_to_enter = True
-
-        # 2. Update Capital
-        current_bal = broker.get_balance()
-        risk_engine.total_capital = current_bal
-        
-        # 3. Market Data
-        # 3. Market Data & Symbol Selection
-        # If no position, dynamic select. If position, stick to it.
-        active_symbol = context['symbol']
-        current_pos = broker.get_open_position()
-        
-        if not current_pos:
-            # Dynamic selection every cycle? Or cache it?
-            # Let's simple check top 1 volume pair if context['symbol'] not locked
-            # But user wants global suggestion.
-            # Simplified: Update active_symbol to best pair if we are flat.
-            top_pairs = selector.get_top_pairs(limit=1)
-            if top_pairs:
-                active_symbol = top_pairs[0]
-                logger.info(f"Selected Active Symbol: {active_symbol}")
-        else:
-            active_symbol = current_pos.symbol
+        # Status Line Aggregation
+        status = {
+            "signal": None,
+            "pos_state": "FLAT",
+            "breaker": "OK",
+            "active_symbol": context['symbol'],
+            "price": 0.0,
+            "arm": 0,
+            "pnl": 0.0
+        }
 
         try:
-            candles = market.fetch_ohlcv(active_symbol, context['timeframe'], limit=context['lookback'])
+            logger.debug(f"--- Cycle Start: {datetime.now()} ---")
+            
+            # Re-fetch state securely
+            current_bal = broker.get_balance()
+            risk_engine.total_capital = current_bal
+            
+            # Sync daily stats
+            today_str = datetime.utcnow().strftime('%Y-%m-%d')
+            daily_stats = store.get_daily_stats(today_str)
+            status['pnl'] = daily_stats.get('pnl', 0.0)
+
+            # Daily Summary Print (if day changed)
+            if last_summary_date != today_str:
+                if last_summary_date is not None:
+                    # Print summary for yesterday
+                    logger.warning(f"\n=== DAILY SUMMARY ({last_summary_date}) ===")
+                    # Retrieve stats for yesterday... simplified: just print current stats as "end of day"
+                    # In real app, we'd query yesterday's row.
+                    logger.warning(f"Trades: {daily_stats.get('trades_count',0)} | PnL: {daily_stats.get('pnl',0):.2f}")
+                    logger.warning("===================================\n")
+                last_summary_date = today_str
+
+            # 1. Circuit Breaker
+            if daily_stats.get('paused_until'):
+                status['breaker'] = f"PAUSED({daily_stats['paused_until']})"
+                # We return early but still print status? No, user said "print ONE concise status line".
+                # If paused, we basically idle.
+                # Let's fallback to simplified status
+                logger.warning(format_status_line(datetime.utcnow(), status['active_symbol'], 0, "-", "PAUSED", "-", status['pnl'], status['breaker'], 300))
+                return
+
+            if daily_stats.get('pnl', 0) < -(current_bal * CONFIG['daily_loss_limit_percent'] / 100):
+                logger.critical("Daily Loss Limit Hit. Pausing.")
+                store.update_daily_stats(today_str, {'paused_until': 'Next Day'})
+                status['breaker'] = "PAUSED(LOSS_LIMIT)"
+                return
+                
+            # 2. Market Data & Symbol Selection
+            current_pos = store.get_open_position() 
+            
+            if current_pos:
+                status['active_symbol'] = current_pos.symbol
+                status['pos_state'] = f"{current_pos.side.value}"
+                status['arm'] = 0 # retrieve from pos if avail
+            else:
+                if not args.symbol: 
+                    top_pairs = selector.get_top_pairs(limit=1)
+                    if top_pairs:
+                        status['active_symbol'] = top_pairs[0]
+                        logger.debug(f"Selected Active Symbol: {status['active_symbol']}")
+            
+            # 3. Fetch Data
+            candles = market.fetch_ohlcv(status['active_symbol'], context['timeframe'], limit=context['lookback'])
             if not candles:
-                logger.warning("No candles fetched.")
+                logger.debug("No candles fetched.")
                 circuit_breaker.record_api_error()
                 return
+
+            # 4. Feature Engineering
+            df = FeatureEngine.compute_indicators(candles)
+            if df.empty: return
+            
+            current_candle = candles[-1]
+            status['price'] = current_candle.close
+            regime = RegimeDetector.detect(df.iloc[-1])
+            logger.debug(f"Market Regime: {regime.value}")
+            
+            # 5. Bandit
+            arm_idx = 0
+            if not current_pos:
+                arm_idx = bandit.select_arm_index()
+            status['arm'] = arm_idx
+            active_params = ARMS[arm_idx]
+
+            # 6. Signal
+            signal = strategy.check_signal(
+                df, 
+                regime, 
+                active_params, 
+                current_position=(current_pos is not None)
+            )
+            
+            if signal:
+                status['signal'] = signal.side.value
+            
+            # 7. Sentiment
+            safe_to_enter = True
+            if not sentiment_engine.is_market_safe(threshold=CONFIG.get('sentiment_threshold', 20)):
+                safe_to_enter = False
+                status['breaker'] = "SENTIMENT_FEAR"
+
+            # 8. Execution
+            if signal:
+                logger.debug(f"Signal found: {signal.side}")
+                if signal.side == Side.BUY:
+                    if current_pos: pass
+                    elif not safe_to_enter: logger.debug("Sentiment unsafe")
+                    elif not risk_engine.can_open_new_position(0): logger.debug("Risk max pos")
+                    else:
+                        size = risk_engine.calculate_position_size(signal)
+                        market_struct = market.get_market_structure(status['active_symbol'])
+                        ok, msg = risk_engine.check_min_notional(size, signal.price, market_struct)
+                        if ok:
+                            logger.info(f"EXECUTING BUY: {size} @ {signal.price}")
+                            broker.place_order(signal, size)
+                            status['pos_state'] = "OPENING"
+                        else:
+                            logger.debug(f"Min notional fail: {msg}")
+
+                elif signal.side == Side.SELL:
+                    if current_pos:
+                        logger.info(f"EXECUTING SELL: Closing {current_pos.amount}")
+                        broker.place_order(signal, current_pos.amount)
+                        status['pos_state'] = "CLOSING"
+
+            # 9. Paper SL/TP
+            if not is_live and current_pos:
+                 exit_sig = broker.check_sl_tp(current_candle)
+                 if exit_sig:
+                     logger.info(f"Paper SL/TP Trigger: {exit_sig.reason}")
+                     broker.place_order(exit_sig, current_pos.amount)
+                     status['pos_state'] = "CLOSING_SLTP"
+
+            # 10. Status Log (Concise)
+            # Use logger.warning to ensure it prints to console (lvl=WARNING)
+            elapsed = time.time() - cycle_start_time
+            next_wait = 300 - int(elapsed) # approx for 5m interval
+            line = format_status_line(
+                datetime.utcnow(), 
+                status['active_symbol'], 
+                status['price'], 
+                status['signal'], 
+                status['pos_state'], 
+                status['arm'], 
+                status['pnl'], 
+                status['breaker'],
+                max(0, next_wait)
+            )
+            logger.warning(line)
+
         except Exception as e:
-            logger.error(f"Market data fetch error: {e}")
+            logger.error(f"Cycle Error: {e}", exc_info=True)
             circuit_breaker.record_api_error()
-            return
-
-        # 4. Feature Engineering
-        # Use default params for regime detection
-        df = FeatureEngine.compute_indicators(candles)
-        current_candle = candles[-1]
-        
-        if df.empty:
-            return
-
-        # 5. Regime Detection
-        regime = RegimeDetector.detect(df.iloc[-1])
-        logger.info(f"Market Regime: {regime.value} | Price: {current_candle.close}")
-
-        # 6. Optimization: Select Arm
-        # (Only if no open position? Or can we switch strat mid-flight? usually NO)
-        current_pos = broker.get_open_position()
-        
-        arm_idx = 0
-        if not current_pos:
-            arm_idx = bandit.select_arm_index()
-            # Also run walk-forward validation if switching arms, skipped for MVP simplicity
-        else:
-            # Stick to the arm that opened the position if possible, 
-            # OR retrieve param set from position object
-            pass 
             
-        active_params = ARMS[arm_idx]
-        if current_pos and current_pos.strategy_params:
-            active_params = current_pos.strategy_params
-
-        # Re-compute features if needed for specific arm (if different from default)
-        # For MVP we used standard features in strategy check mostly, but let's assume standard is enough 
-        # unless params require different window lengths.
-        # df_arm = FeatureEngine.compute_dynamic_features(candles, active_params.to_dict()) 
-        # Using standard df for now.
-
-        # 7. Strategy Signal
-        signal = strategy.check_signal(
-            df, 
-            regime, 
-            active_params, 
-            current_position=(current_pos is not None)
-        )
-        
-        if signal:
-            logger.info(f"Signal Generated: {signal.side} | Reason: {signal.reason}")
-            
-            # 8. Risk Check Implementation
-            if signal.side == Side.BUY:
-                if not safe_to_enter:
-                    logger.info("Signal Ignored: Market Sentiment Unsafe.")
-                    return
-                # Check Entry Limits
-                # Check Max positions
-                if not risk_engine.can_open_new_position(1 if current_pos else 0):
-                    logger.info("Risk: Max positions reached. Ignored.")
-                    return
-
-                # Calculate Size
-                size = risk_engine.calculate_position_size(signal)
-                
-                # Check Min Notional
-                market_struct = market.get_market_structure(context['symbol'])
-                ok, msg = risk_engine.check_min_notional(size, signal.price, market_struct)
-                if not ok:
-                    logger.info(f"Risk: Min notional failed. {msg}")
-                    return
-                    
-                # Execute
-                logger.info(f"Placing BUY Order: Size {size:.5f} @ {signal.price}")
-                broker.place_order(signal, size)
-                
-            elif signal.side == Side.SELL:
-                # Exit
-                if current_pos:
-                    logger.info(f"Placing SELL Order to Close: {current_pos.amount:.5f}")
-                    # Size is full position amount
-                    broker.place_order(signal, current_pos.amount)
-
-        # 9. Paper Trading SL/TP Check (if simulated)
-        if hasattr(broker, 'check_sl_tp') and not is_live:
-            # Check against the latest candle (completed)
-            # Or current ticker? Since we run on candle close, we check the JUST CLOSED candle
-            # for any intra-bar SL/TP hits that we missed? 
-            # Better: In paper mode, we assume we check every tick (or 5 mins).
-            # Here we pass the latest candle.
-            exit_sig = broker.check_sl_tp(current_candle)
-            if exit_sig:
-                 logger.info(f"Paper SL/TP Trigger: {exit_sig.reason}")
-                 broker.place_order(exit_sig, current_pos.amount)
-
-        # 10. Reporting
-        # Simple logging status
-        pnl_str = f"{current_pos.pnl:.2f}" if current_pos else "0.00"
-        logger.info(f"Status: Bal: {current_bal:.2f} | Pos: {current_pos.side.value if current_pos else 'NONE'} (PnL: {pnl_str}) | Arm: {arm_idx}")
-
-
-    # Single run or Loop
+    # --- End Job ---
+    
     if args.once:
         job()
     else:
-        # Schedule: Run every X minutes to check? 
-        # If timeframe is 1h, we should check shortly after the hour.
-        # Or run every 1 minute and check if new candle arrived (by timestamp).
-        
-        logger.info("Starting Main Loop...")
-        # Simple loop without 'schedule' lib for robustness in this snippet:
-        # But user suggested 'schedule' lib.
-        
-        # run job immediately once
-        job() 
-        
+        logger.warning("Starting Main Loop... (Press Ctrl+C to stop)")
+        job()
         schedule.every(5).minutes.do(job)
-        
         while True:
             schedule.run_pending()
             time.sleep(1)

@@ -1,7 +1,7 @@
 import sqlite3
 import json
 from typing import List, Optional, Dict, Any
-from core.types import Candle, Order, Position, Trade, OrderStatus, PositionStatus
+from core.types import Candle, Order, Position, Trade, OrderStatus, PositionStatus, Side, OrderType, Reason
 
 class SQLiteStore:
     def __init__(self, db_path: str = "swingbot.db"):
@@ -81,7 +81,100 @@ class SQLiteStore:
         conn.close()
 
     def get_open_position(self) -> Optional[Position]:
-         # Implementation to fetch status='OPEN'
-         pass
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM positions WHERE status = 'OPEN'")
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+            
+        return Position(
+            id=row['id'],
+            symbol=row['symbol'],
+            side=Side(row['side']),
+            entry_price=row['entry_price'],
+            amount=row['amount'],
+            stop_loss=row['stop_loss'],
+            take_profit=row['take_profit'],
+            entry_time=row['entry_time'],
+            status=PositionStatus(row['status']),
+            exit_price=row['exit_price'],
+            exit_time=row['exit_time'],
+            exit_reason=Reason(row['exit_reason']) if row['exit_reason'] else None,
+            pnl=row['pnl'],
+            pnl_percent=row['pnl_percent'],
+            commission=row['commission'],
+            strategy_params=None # Can reload if needed, simplified for now
+        )
 
-    # Add other methods as needed for trades, stats, etc.
+    def get_open_orders(self) -> List[Order]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Fetch orders that are not closed (FILLED, CANCELED, REJECTED, EXPIRED)
+        # So PENDING or OPEN
+        cursor.execute("SELECT * FROM orders WHERE status IN ('PENDING', 'OPEN')")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        orders = []
+        for row in rows:
+            orders.append(Order(
+                id=row['id'],
+                symbol=row['symbol'],
+                side=Side(row['side']),
+                order_type=OrderType(row['order_type']),
+                amount=row['amount'],
+                price=row['price'],
+                status=OrderStatus(row['status']),
+                filled_amount=row['filled_amount'],
+                filled_price=row['filled_price'],
+                timestamp=row['timestamp'],
+                client_order_id=row['client_order_id']
+            ))
+        return orders
+
+    def update_order_status(self, order_id: str, status: OrderStatus, filled_amount: float = 0.0, filled_price: float = 0.0):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE orders 
+            SET status = ?, filled_amount = ?, filled_price = ?
+            WHERE id = ?
+        """, (status.value, filled_amount, filled_price, order_id))
+        conn.commit()
+        conn.close()
+        
+    def get_daily_stats(self, date_str: str) -> Dict[str, Any]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM daily_stats WHERE date = ?", (date_str,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return dict(row)
+        return {}
+
+    def update_daily_stats(self, date_str: str, updates: Dict[str, Any]):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Upsert logic basics
+        # Check exist
+        cursor.execute("SELECT * FROM daily_stats WHERE date = ?", (date_str,))
+        exists = cursor.fetchone()
+        
+        if not exists:
+            cursor.execute("""
+                INSERT INTO daily_stats (date, pnl, trades_count, wins, losses, max_drawdown, start_balance, end_balance, paused_until)
+                VALUES (?, 0.0, 0, 0, 0, 0.0, 0.0, 0.0, NULL)
+            """, (date_str,))
+            
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [date_str]
+        
+        cursor.execute(f"UPDATE daily_stats SET {set_clause} WHERE date = ?", values)
+        conn.commit()
+        conn.close()
+

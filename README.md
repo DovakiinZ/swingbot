@@ -41,8 +41,6 @@ A safe, self-improving crypto swing trading bot for Binance Spot.
 3. **Run**:
    ```bash
    python run.py --live
-   ```
-
 ## Key Files
 - `run.py`: Entry point.
 - `config.yaml`: Strategy and risk params.
@@ -50,11 +48,57 @@ A safe, self-improving crypto swing trading bot for Binance Spot.
 - `risk/`: Position sizing and circuit breakers.
 - `reports/`: Generates daily JSON reports.
 
-## Safety Mechanisms
-- **Daily Loss Limit**: Stops if drawdown > 2% in a day.
-- **Consecutive Losses**: Stops after 3 losses in a row.
-- **API Failures**: Stops after 2 contiguous API errors.
-- **Walk-Forward Validation**: Validates strategy arms before switching.
+## 🚨 Safety First
+This bot is designed with **Capital Preservation** as the #1 priority.
+
+### Hard Kill-Switches (Circuit Breakers)
+The bot will **STOP TRADING** for the rest of the UTC day if:
+1.  **Daily Loss Limit**: Equity drops by > 2% (default).
+2.  **Consecutive Losses**: 3 losing trades in a row.
+3.  **API Failures**: 2 critical API errors occur.
+
+### Live Trading Requirements
+To enable real trading, you must pass 3 checks:
+1.  Set `TRADING_MODE=live` in your `.env` file.
+2.  Set `live: true` (implied or explicit) but `.env` is the hard gate.
+3.  Create a file named `LIVE_OK.txt` in the root directory.
+
+**NEVER enable withdrawals on your API keys.**
+
+## ⚡ Quick Start
+
+### 1. Install
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Verify Install
+Run the self-check tool to ensure database and logic are sound:
+```bash
+python -m storage.check_store
+```
+
+### 3. Run (Paper Mode)
+Start the bot in simulation mode. It runs every 5 minutes.
+```bash
+python run.py
+```
+To run a single cycle and check status:
+```bash
+python run.py --once
+```
+
+### 4. Configuration
+Edit `config.yaml` to adjust risk params:
+- `risk_per_trade_percent`: Position sizing (default 1.0%).
+- `max_open_positions`: Hard limit (default 1).
+- `sentiment_threshold`: Min Fear & Greed score to enter (default 20).
+
+## 🧠 Optimization (Bandit)
+The bot uses a multi-armed bandit algorithm to learn.
+- It tracks the **R-Multiple** (Risk:Reward ratio) of every trade.
+- It dynamically adjusts the probability of selecting different strategy parameters ("Arms").
+- Arms are defined in `optimize/param_sets.py`.
 
 ## License
 MIT

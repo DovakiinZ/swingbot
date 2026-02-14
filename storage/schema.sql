@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS positions (
     pnl REAL,
     pnl_percent REAL,
     commission REAL,
-    strategy_params TEXT
+    strategy_params TEXT,
+    arm_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS trades (
@@ -63,7 +64,8 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     losses INTEGER,
     max_drawdown REAL,
     start_balance REAL,
-    end_balance REAL
+    end_balance REAL,
+    paused_until TEXT
 );
 
 CREATE TABLE IF NOT EXISTS arm_performance (
