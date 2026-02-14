@@ -23,6 +23,9 @@ from execution.broker_binance import BinanceBroker
 from optimize.bandit import Bandit
 from reports.daily_report import DailyReport
 from optimize.param_sets import ARMS
+from data.sentiment import SentimentEngine
+from strategy.selector import SymbolSelector
+
 
 # Load Config
 load_dotenv()
@@ -94,7 +97,12 @@ def main():
     
     strategy = RsiEmaStrategy()
     bandit = Bandit(store, exploration_prob=CONFIG['bandit']['exploration_prob'])
+
     reporter = DailyReport(store)
+    sentiment_engine = SentimentEngine()
+    selector = SymbolSelector(market.exchange)
+    sentiment_engine = SentimentEngine()
+    selector = SymbolSelector(market.exchange)
 
     context = {
         "symbol": args.symbol,
@@ -110,13 +118,38 @@ def main():
             logger.warning(f"Circuit Breaker TRIPPED: {circuit_breaker.trip_reason}. Skipping cycle.")
             return
 
+        # 1.5 Sentiment Check
+        if not sentiment_engine.is_market_safe(threshold=CONFIG.get('sentiment_threshold', 20)):
+            logger.warning("Market Sentiment Unsafe. Updates only, no new entries.")
+            # We still proceed to process logic for exits, but flag it
+            safe_to_enter = False
+        else:
+            safe_to_enter = True
+
         # 2. Update Capital
         current_bal = broker.get_balance()
         risk_engine.total_capital = current_bal
         
         # 3. Market Data
+        # 3. Market Data & Symbol Selection
+        # If no position, dynamic select. If position, stick to it.
+        active_symbol = context['symbol']
+        current_pos = broker.get_open_position()
+        
+        if not current_pos:
+            # Dynamic selection every cycle? Or cache it?
+            # Let's simple check top 1 volume pair if context['symbol'] not locked
+            # But user wants global suggestion.
+            # Simplified: Update active_symbol to best pair if we are flat.
+            top_pairs = selector.get_top_pairs(limit=1)
+            if top_pairs:
+                active_symbol = top_pairs[0]
+                logger.info(f"Selected Active Symbol: {active_symbol}")
+        else:
+            active_symbol = current_pos.symbol
+
         try:
-            candles = market.fetch_ohlcv(context['symbol'], context['timeframe'], limit=context['lookback'])
+            candles = market.fetch_ohlcv(active_symbol, context['timeframe'], limit=context['lookback'])
             if not candles:
                 logger.warning("No candles fetched.")
                 circuit_breaker.record_api_error()
@@ -174,6 +207,9 @@ def main():
             
             # 8. Risk Check Implementation
             if signal.side == Side.BUY:
+                if not safe_to_enter:
+                    logger.info("Signal Ignored: Market Sentiment Unsafe.")
+                    return
                 # Check Entry Limits
                 # Check Max positions
                 if not risk_engine.can_open_new_position(1 if current_pos else 0):
