@@ -65,6 +65,12 @@ To enable real trading, you must pass 3 checks:
 
 If *any* of these are missing, the bot forces **PAPER** mode and prints a warning.
 
+## ❓ Help / مساعدة
+To see a full list of commands in Arabic and English:
+```bash
+python run.py --guide
+```
+
 ## 🌍 Localization (Arabic Support)
 To run in Arabic mode (default):
 ```bash

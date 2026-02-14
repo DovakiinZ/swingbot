@@ -27,7 +27,25 @@ TRANSLATIONS = {
         "MODE_LIVE": "LIVE",
         "MODE_PAPER": "PAPER",
         "WARNING_FORCE_PAPER": "WARNING: Live mode requirements not met. Forcing PAPER mode.",
-        "LOGGING_MSG": "Logging: Console={console}, File={file}"
+        "LOGGING_MSG": "Logging: Console={console}, File={file}",
+        "HELP_TITLE": "--- Swingbot Help / مساعد البوت ---",
+        "HELP_USAGE": "Usage / الاستخدام:",
+        "HELP_Paper": "  python run.py             : Run in Paper Mode (Default) | تشغيل الوضع التجريبي (افتراضي)",
+        "HELP_Live": "  python run.py --live      : Run in LIVE Mode (Requires gates) | تشغيل الوضع الحقيقي (يتطلب شروط)",
+        "HELP_Once": "  python run.py --once      : Run one cycle and exit | تشغيل دورة واحدة والخروج",
+        "HELP_Lang": "  python run.py --lang ar   : Force language (ar/en) | تحديد اللغة (ar/en)",
+        "HELP_Guide": "  python run.py --guide     : Show this help menu | عرض هذه القائمة",
+        "HELP_Desc": """
+    [English]
+    This bot trades based on RSI+EMA strategy. 
+    - Paper mode checks 'paper_start_balance_usdt' in config.
+    - Live mode requires: config.yaml(live=true), .env(TRADING_MODE=live), LIVE_OK.txt.
+    
+    [عربي]
+    هذا البوت يتداول بناءً على استراتيجية RSI+EMA.
+    - الوضع التجريبي يعتمد على رصيد وهمي في الإعدادات.
+    - الوضع الحقيقي يتطلب: تفعيل live في الملفات، ووجود ملف LIVE_OK.txt.
+        """
     },
     "ar": {
         "CYCLE_START": "--- بداية الدورة",
@@ -58,7 +76,25 @@ TRANSLATIONS = {
         "MODE_LIVE": "حقيقي (LIVE)",
         "MODE_PAPER": "تجريبي (PAPER)",
         "WARNING_FORCE_PAPER": "تحذير: شروط الوضع الحقيقي غير مستوفاة. تم التحويل للوضع التجريبي.",
-        "LOGGING_MSG": "سجل: واجهة={console}, ملف={file}"
+        "LOGGING_MSG": "سجل: واجهة={console}, ملف={file}",
+        "HELP_TITLE": "--- Swingbot Help / مساعد البوت ---",
+        "HELP_USAGE": "Usage / الاستخدام:",
+        "HELP_Paper": "  python run.py             : Run in Paper Mode (Default) | تشغيل الوضع التجريبي (افتراضي)",
+        "HELP_Live": "  python run.py --live      : Run in LIVE Mode (Requires gates) | تشغيل الوضع الحقيقي (يتطلب شروط)",
+        "HELP_Once": "  python run.py --once      : Run one cycle and exit | تشغيل دورة واحدة والخروج",
+        "HELP_Lang": "  python run.py --lang ar   : Force language (ar/en) | تحديد اللغة (ar/en)",
+        "HELP_Guide": "  python run.py --guide     : Show this help menu | عرض هذه القائمة",
+        "HELP_Desc": """
+    [English]
+    This bot trades based on RSI+EMA strategy. 
+    - Paper mode checks 'paper_start_balance_usdt' in config.
+    - Live mode requires: config.yaml(live=true), .env(TRADING_MODE=live), LIVE_OK.txt.
+    
+    [عربي]
+    هذا البوت يتداول بناءً على استراتيجية RSI+EMA.
+    - الوضع التجريبي يعتمد على رصيد وهمي في الإعدادات.
+    - الوضع الحقيقي يتطلب: تفعيل live في الملفات، ووجود ملف LIVE_OK.txt.
+        """
     }
 }
 

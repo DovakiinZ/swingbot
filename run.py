@@ -86,11 +86,24 @@ def main():
     parser.add_argument("--once", action="store_true", help="Run loop once and exit")
     parser.add_argument("--symbol", type=str, default=CONFIG.get('symbol', 'BTC/USDT'), help="Trading pair")
     parser.add_argument("--lang", type=str, help="Language (en, ar)")
+    parser.add_argument("--guide", action="store_true", help="Show bilingual help menu / عرض القائمة")
     args = parser.parse_args()
 
     # Resolve Language
     lang = args.lang or os.getenv("BOT_LANG") or CONFIG.get("lang", "ar")
     i18n.set_lang(lang)
+
+    # 0. Help Guide
+    if args.guide:
+        print("\n" + i18n.get("HELP_TITLE"))
+        print(i18n.get("HELP_USAGE"))
+        print(i18n.get("HELP_Paper"))
+        print(i18n.get("HELP_Live"))
+        print(i18n.get("HELP_Once"))
+        print(i18n.get("HELP_Lang"))
+        print(i18n.get("HELP_Guide"))
+        print(i18n.get("HELP_Desc"))
+        sys.exit(0)
 
     # 1. Mode Selection Logic (Strict)
     check_live_env = (os.getenv("TRADING_MODE", "paper").lower() == "live")
