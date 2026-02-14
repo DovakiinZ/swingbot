@@ -32,6 +32,8 @@ load_dotenv()
 with open("config.yaml", "r") as f:
     CONFIG = yaml.safe_load(f)
 
+from core.i18n import i18n
+
 # Global State
 store = SQLiteStore(db_path=CONFIG['db_path'])
 clock = Clock(mode="live") 
@@ -39,59 +41,92 @@ logger = logging.getLogger("swingbot")
 
 # Observability Helpers
 def format_status_line(timestamp, symbol, price, signal, pos_state, arm, pnl, breaker, next_check):
-    # Time | Symbol | Price | Signal | Pos | Arm | PnL | Breaker | Next
+    # Retrieve template
+    tpl = i18n.get("STATUS_LINE")
     t_str = timestamp.strftime("%H:%M:%S")
-    sig_str = f"{signal}" if signal else "-"
-    pos_str = f"{pos_state}"
-    return f"{t_str} UTC | {symbol} | ${price:<8.2f} | Sig: {sig_str:<4} | Pos: {pos_str:<6} | Arm: {arm} | DayPnL: {pnl:>6.2f} | {breaker} | Next: {next_check}s"
+    
+    # Translate values
+    sig_key = f"SIGNAL_{signal}" if signal and signal != "-" else "SIGNAL_HOLD"
+    sig_str = i18n.get(sig_key)
+    
+    # Map pos_state to key
+    pos_key = "POS_NONE"
+    if pos_state == "OPEN": pos_key = "POS_OPEN"
+    elif pos_state == "OPENING": pos_key = "POS_OPENING"
+    elif pos_state == "CLOSING": pos_key = "POS_CLOSING"
+    elif pos_state == "CLOSING_SLTP": pos_key = "POS_CLOSING"
+    
+    pos_str = i18n.get(pos_key)
+    
+    # Breaker translation
+    breaker_str = i18n.get("BREAKER_OK")
+    if "PAUSED" in breaker:
+        if "LOSS_LIMIT" in breaker: breaker_str = f"{i18n.get('BREAKER_PAUSED')}({i18n.get('BREAKER_LOSS_LIMIT')})"
+        elif "SENTIMENT" in breaker: breaker_str = f"{i18n.get('BREAKER_PAUSED')}({i18n.get('BREAKER_SENTIMENT')})"
+        else: breaker_str = f"{i18n.get('BREAKER_PAUSED')}"
+    elif "SENTIMENT_FEAR" in breaker:
+        breaker_str = i18n.get("BREAKER_SENTIMENT")
+
+    return tpl.format(
+        timestamp=t_str,
+        symbol=symbol,
+        price=price,
+        signal=sig_str,
+        pos_state=pos_str,
+        arm=arm,
+        pnl=pnl,
+        breaker=breaker_str,
+        next_wait=next_check
+    )
 
 def main():
     parser = argparse.ArgumentParser(description="Swingbot")
     parser.add_argument("--paper", action="store_true", help="Run in paper mode (default)")
     parser.add_argument("--live", action="store_true", help="Run in LIVE mode (DANGEROUS)")
     parser.add_argument("--once", action="store_true", help="Run loop once and exit")
-    parser.add_argument("--symbol", type=str, default=CONFIG['symbol'], help="Trading pair")
+    parser.add_argument("--symbol", type=str, default=CONFIG.get('symbol', 'BTC/USDT'), help="Trading pair")
+    parser.add_argument("--lang", type=str, help="Language (en, ar)")
     args = parser.parse_args()
 
-    # Safety Checks for Live Mode
+    # Resolve Language
+    lang = args.lang or os.getenv("BOT_LANG") or CONFIG.get("lang", "ar")
+    i18n.set_lang(lang)
+
+    # 1. Mode Selection Logic (Strict)
+    check_live_env = (os.getenv("TRADING_MODE", "paper").lower() == "live")
+    check_live_file = os.path.exists("LIVE_OK.txt")
+    check_live_conf = CONFIG.get("live", False)
+    
     is_live = False
+    
     if args.live:
-        # 1. Check ENV/Config
-        env_mode = os.getenv("TRADING_MODE", "paper").lower()
-        if env_mode != "live":
-            logger.critical("ARG --live set but .env TRADING_MODE is not 'live'. Aborting.")
-            sys.exit(1)
-        
-        # 2. Check LIVE_OK.txt
-        if not os.path.exists("LIVE_OK.txt"):
-            logger.critical("LIVE_OK.txt not found. Aborting live mode.")
-            sys.exit(1)
+        # User requested LIVE via CLI. Check gates.
+        if check_live_env and check_live_file and check_live_conf:
+            is_live = True
+        else:
+            # Fallback
+            print(f"\n!!!!!!!!!!!\n{i18n.get('WARNING_FORCE_PAPER')}\n!!!!!!!!!!!\n")
+            if not check_live_env: print("- env TRADING_MODE != live")
+            if not check_live_file: print("- LIVE_OK.txt missing")
+            if not check_live_conf: print("- config.yaml live != true")
+            time.sleep(2)
+            is_live = False
             
-        print("WARNING: STARTING IN LIVE TRADING MODE")
-        for i in range(5, 0, -1):
-            print(f"Starting in {i}...")
-            time.sleep(1)
-        is_live = True
-        clock.mode = "live"
-    else:
-        # logger.info("Starting in PAPER mode") -> DEBUG
-        clock.mode = "paper"
+    clock.mode = "live" if is_live else "paper"
 
     # Setup Logging
     log_level_console = os.getenv("LOG_LEVEL_CONSOLE", "WARNING")
-    log_level_file = os.getenv("LOG_LEVEL_FILE", "DEBUG") # User said "Default INFO to file", let's use DEBUG for file to catch everything
+    log_level_file = os.getenv("LOG_LEVEL_FILE", "DEBUG") 
     setup_logging(console_level=log_level_console, file_level=log_level_file)
     
-    logger.warning(f"--- Swingbot Started ({'LIVE' if is_live else 'PAPER'}) ---")
-    logger.warning(f"Logging: Console={log_level_console}, File={log_level_file}")
-
     # Initialize Components
     market = MarketData(sandbox=False) 
     
     if is_live:
         broker = BinanceBroker(store, market)
     else:
-        broker = PaperBroker(store, clock, initial_balance=50.0)
+        init_bal = CONFIG.get('paper_start_balance_usdt', 1000.0)
+        broker = PaperBroker(store, clock, initial_balance=init_bal)
 
     risk_engine = RiskEngine(
         total_capital=broker.get_balance(),
@@ -118,15 +153,43 @@ def main():
         "lookback": CONFIG['lookback']
     }
     
-    # State tracking for summary
-    last_summary_date = None
+    # --- STARTUP BANNER ---
+    mode_str = i18n.get("MODE_LIVE") if is_live else i18n.get("MODE_PAPER")
+    print("\n" + "="*40)
+    print(i18n.get("START_MSG").format(mode=mode_str))
+    print(i18n.get("BANNER_ACCOUNT").format(name=CONFIG.get('account_name', 'Unknown')))
+    print(i18n.get("BANNER_SYMBOL").format(symbol=context['symbol'], timeframe=context['timeframe']))
+    print(i18n.get("BANNER_RISK").format(
+        risk=CONFIG['risk_per_trade_percent'], 
+        max_dd=CONFIG['daily_loss_limit_percent'],
+        max_loss_run=CONFIG['consecutive_loss_limit']
+    ))
+    
+    if CONFIG.get('show_balances_on_startup', True):
+        if is_live and hasattr(broker, 'get_detailed_balance'):
+            try:
+                bals = broker.get_detailed_balance()
+                print(i18n.get("BANNER_BALANCE").format(
+                    free=bals['USDT_free'], 
+                    total=bals['USDT_total'], 
+                    btc=bals['BTC_total']
+                ))
+            except Exception as e:
+                 logger.error(f"Balance fetch failed: {e}")
+                 print(i18n.get("BANNER_BALANCE").format(free=0, total=0, btc=0) + " (Error)")
+        else:
+             print(i18n.get("BANNER_PAPER_BAL").format(total=broker.get_balance()))
+    print("="*40 + "\n")
+    
+    
+    # State tracking
+    last_summary_date = datetime.utcnow().strftime('%Y-%m-%d')
 
     # Job Loop
     def job():
         nonlocal last_summary_date
         cycle_start_time = time.time()
         
-        # Status Line Aggregation
         status = {
             "signal": None,
             "pos_state": "FLAT",
@@ -140,33 +203,42 @@ def main():
         try:
             logger.debug(f"--- Cycle Start: {datetime.now()} ---")
             
-            # Re-fetch state securely
+            # State Sync
             current_bal = broker.get_balance()
             risk_engine.total_capital = current_bal
             
-            # Sync daily stats
             today_str = datetime.utcnow().strftime('%Y-%m-%d')
             daily_stats = store.get_daily_stats(today_str)
             status['pnl'] = daily_stats.get('pnl', 0.0)
 
-            # Daily Summary Print (if day changed)
+            # Daily Summary Logic (New Day)
             if last_summary_date != today_str:
-                if last_summary_date is not None:
-                    # Print summary for yesterday
-                    logger.warning(f"\n=== DAILY SUMMARY ({last_summary_date}) ===")
-                    # Retrieve stats for yesterday... simplified: just print current stats as "end of day"
-                    # In real app, we'd query yesterday's row.
-                    logger.warning(f"Trades: {daily_stats.get('trades_count',0)} | PnL: {daily_stats.get('pnl',0):.2f}")
-                    logger.warning("===================================\n")
+                # Calculate stats for the closed day
+                stats = store.get_daily_trade_stats(last_summary_date)
+                
+                header = i18n.get("SUMMARY_HEADER").format(date=last_summary_date)
+                # Need to add start_balance to calc max_dd % properly in store, but approximating...
+                body = i18n.get("SUMMARY_STATS").format(
+                    count=stats['count'],
+                    winrate=stats['winrate'],
+                    expectancy=stats['expectancy'],
+                    pnl=stats['pnl'],
+                    max_dd=0.0, # stats['max_dd'] is abs amount, % needs equity context
+                    best_arm=stats['best_arm']
+                )
+                logger.warning(f"\n{header}")
+                logger.warning(body)
+                logger.warning("===================================\n")
+                
+                # Write Report
+                reporter.generate_report(last_summary_date)
                 last_summary_date = today_str
 
             # 1. Circuit Breaker
             if daily_stats.get('paused_until'):
                 status['breaker'] = f"PAUSED({daily_stats['paused_until']})"
-                # We return early but still print status? No, user said "print ONE concise status line".
-                # If paused, we basically idle.
-                # Let's fallback to simplified status
-                logger.warning(format_status_line(datetime.utcnow(), status['active_symbol'], 0, "-", "PAUSED", "-", status['pnl'], status['breaker'], 300))
+                # Loop must continue to print status
+                logger.warning(format_status_line(datetime.utcnow(), status['active_symbol'], 0, "-", "POS_NONE", "-", status['pnl'], status['breaker'], 300))
                 return
 
             if daily_stats.get('pnl', 0) < -(current_bal * CONFIG['daily_loss_limit_percent'] / 100):
@@ -181,13 +253,13 @@ def main():
             if current_pos:
                 status['active_symbol'] = current_pos.symbol
                 status['pos_state'] = f"{current_pos.side.value}"
-                status['arm'] = 0 # retrieve from pos if avail
+                status['arm'] = 0 
+                # Try to load arm_id if we enhance .get_open_position to return it
             else:
                 if not args.symbol: 
                     top_pairs = selector.get_top_pairs(limit=1)
                     if top_pairs:
                         status['active_symbol'] = top_pairs[0]
-                        logger.debug(f"Selected Active Symbol: {status['active_symbol']}")
             
             # 3. Fetch Data
             candles = market.fetch_ohlcv(status['active_symbol'], context['timeframe'], limit=context['lookback'])
@@ -196,14 +268,13 @@ def main():
                 circuit_breaker.record_api_error()
                 return
 
-            # 4. Feature Engineering
+            # 4. Features
             df = FeatureEngine.compute_indicators(candles)
             if df.empty: return
             
             current_candle = candles[-1]
             status['price'] = current_candle.close
             regime = RegimeDetector.detect(df.iloc[-1])
-            logger.debug(f"Market Regime: {regime.value}")
             
             # 5. Bandit
             arm_idx = 0
@@ -231,11 +302,10 @@ def main():
 
             # 8. Execution
             if signal:
-                logger.debug(f"Signal found: {signal.side}")
                 if signal.side == Side.BUY:
                     if current_pos: pass
-                    elif not safe_to_enter: logger.debug("Sentiment unsafe")
-                    elif not risk_engine.can_open_new_position(0): logger.debug("Risk max pos")
+                    elif not safe_to_enter: pass
+                    elif not risk_engine.can_open_new_position(0): pass
                     else:
                         size = risk_engine.calculate_position_size(signal)
                         market_struct = market.get_market_structure(status['active_symbol'])
@@ -244,8 +314,8 @@ def main():
                             logger.info(f"EXECUTING BUY: {size} @ {signal.price}")
                             broker.place_order(signal, size)
                             status['pos_state'] = "OPENING"
-                        else:
-                            logger.debug(f"Min notional fail: {msg}")
+                            # Record arm used for this trade logic here ideally
+                            # For MVP we rely on post-trade matching or future enhancement
 
                 elif signal.side == Side.SELL:
                     if current_pos:
@@ -261,10 +331,9 @@ def main():
                      broker.place_order(exit_sig, current_pos.amount)
                      status['pos_state'] = "CLOSING_SLTP"
 
-            # 10. Status Log (Concise)
-            # Use logger.warning to ensure it prints to console (lvl=WARNING)
+            # 10. Status Log
             elapsed = time.time() - cycle_start_time
-            next_wait = 300 - int(elapsed) # approx for 5m interval
+            next_wait = 300 - int(elapsed) 
             line = format_status_line(
                 datetime.utcnow(), 
                 status['active_symbol'], 

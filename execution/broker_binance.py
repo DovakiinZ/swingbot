@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from core.types import Order, Position, Signal, Side, OrderType, OrderStatus, PositionStatus, Reason, Candle
 from data.market import MarketData
 from execution.broker_base import Broker
@@ -18,10 +18,32 @@ class BinanceBroker(Broker):
     def get_balance(self) -> float:
         try:
             balance = self.market.exchange.fetch_balance()
-            return balance['USDT']['free']
+            # Use free balance for trading? Or total? 
+            # Usually we risk based on Total Equity (free + used). 
+            # Let's return total for risk calc.
+            return float(balance['USDT']['total'])
         except Exception as e:
             logger.error(f"Failed to fetch balance: {e}")
             return 0.0
+
+    def get_detailed_balance(self) -> Dict[str, float]:
+        """
+        Returns {
+            'USDT_free': float,
+            'USDT_total': float,
+            'BTC_total': float
+        }
+        """
+        try:
+            bal = self.market.exchange.fetch_balance()
+            return {
+                'USDT_free': float(bal.get('USDT', {}).get('free', 0.0)),
+                'USDT_total': float(bal.get('USDT', {}).get('total', 0.0)),
+                'BTC_total': float(bal.get('BTC', {}).get('total', 0.0))
+            }
+        except Exception as e:
+            logger.error(f"Error fetching detailed balance: {e}")
+            return {'USDT_free': 0.0, 'USDT_total': 0.0, 'BTC_total': 0.0}
 
     def place_order(self, signal: Signal, size: float) -> Optional[Order]:
         # Implementation of live order placement via ccxt

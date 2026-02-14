@@ -178,3 +178,91 @@ class SQLiteStore:
         conn.commit()
         conn.close()
 
+    def get_daily_trade_stats(self, date_str: str) -> Dict[str, Any]:
+        """
+        Calculate stats from CLOSED orders/trades for a specific day?
+        Actually, we can aggregate from the 'trades' table where timestamp falls in that day.
+        Or 'positions' table where exit_time falls in that day.
+        Let's use positions table for closed positions today.
+        """
+        start_ts = int(datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=None).timestamp() * 1000)
+        end_ts = start_ts + 86400 * 1000
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Get closed positions in this time range
+        cursor.execute("""
+            SELECT * FROM positions 
+            WHERE status = 'CLOSED' 
+            AND exit_time >= ? AND exit_time < ?
+        """, (start_ts, end_ts))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        count = len(rows)
+        if count == 0:
+            return {
+                "count": 0, "pnl": 0.0, "winrate": 0.0, 
+                "expectancy": 0.0, "max_dd": 0.0, "best_arm": "-"
+            }
+            
+        total_pnl = 0.0
+        wins = 0
+        total_r = 0.0 # For simplicity, approximate expectancy via PnL or R-multiples if available
+        # To get proper expectancy (Avg Win * Win% - Avg Loss * Loss%), we need raw PnL values.
+        
+        pnls = []
+        arm_counts = {}
+        
+        for row in rows:
+            pnl = row['pnl']
+            pnls.append(pnl)
+            total_pnl += pnl
+            if pnl > 0: wins += 1
+            
+            # Extract arm from params if able, or just track 'strategy_params' raw string as key
+            # It's stored as JSON string usually or null.
+            # Ideally we saved arm_id in positions (we added it to schema).
+            # Let's try to get arm_id if it exists in schema now (we added it in previous turn)
+            # Row is sqlite3.Row object
+            if 'arm_id' in row.keys() and row['arm_id'] is not None:
+                arm = row['arm_id']
+                arm_counts[arm] = arm_counts.get(arm, 0) + 1
+        
+        winrate = (wins / count) * 100
+        avg_pnl = total_pnl / count
+        # Expectancy = Average PnL (simple definition)
+        
+        # Best Arm
+        best_arm = "-"
+        if arm_counts:
+            best_arm = max(arm_counts, key=arm_counts.get)
+            
+        # Drawdown calculation (intra-day based on closed sequence)
+        # Scan cumulative PnL to find max drawdown from peak
+        cum_pnl = 0.0
+        peak = 0.0
+        max_dd_val = 0.0
+        
+        for p in pnls:
+            cum_pnl += p
+            if cum_pnl > peak: peak = cum_pnl
+            dd = peak - cum_pnl
+            if dd > max_dd_val: max_dd_val = dd
+            
+        # Convert max_dd_val to approximate percent? 
+        # Needs start balance. Let's return raw value or 0 for now if balance unknown in this scope.
+        # Or just return 0 if no balance info.
+        
+        return {
+            "count": count,
+            "pnl": total_pnl,
+            "winrate": winrate,
+            "expectancy": avg_pnl,
+            "max_dd": max_dd_val, # Absolute amount
+            "best_arm": best_arm
+        }
+
+

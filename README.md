@@ -57,13 +57,20 @@ The bot will **STOP TRADING** for the rest of the UTC day if:
 2.  **Consecutive Losses**: 3 losing trades in a row.
 3.  **API Failures**: 2 critical API errors occur.
 
-### Live Trading Requirements
+### Live Trading Requirements (Strict)
 To enable real trading, you must pass 3 checks:
-1.  Set `TRADING_MODE=live` in your `.env` file.
-2.  Set `live: true` (implied or explicit) but `.env` is the hard gate.
-3.  Create a file named `LIVE_OK.txt` in the root directory.
+1.  **Config**: `live: true` in `config.yaml`.
+2.  **Env**: `TRADING_MODE=live` in `.env`.
+3.  **Gatefile**: `LIVE_OK.txt` exists in root.
 
-**NEVER enable withdrawals on your API keys.**
+If *any* of these are missing, the bot forces **PAPER** mode and prints a warning.
+
+## 🌍 Localization (Arabic Support)
+To run in Arabic mode (default):
+```bash
+python run.py --lang ar
+```
+Or set `lang: "ar"` in `config.yaml`.
 
 ## ⚡ Quick Start
 
@@ -73,20 +80,15 @@ pip install -r requirements.txt
 ```
 
 ### 2. Verify Install
-Run the self-check tool to ensure database and logic are sound:
 ```bash
 python -m storage.check_store
 ```
 
 ### 3. Run (Paper Mode)
-Start the bot in simulation mode. It runs every 5 minutes.
 ```bash
 python run.py
 ```
-To run a single cycle and check status:
-```bash
-python run.py --once
-```
+Outputs one status line per cycle. Detailed logs in `logs/`.
 
 ### 4. Configuration
 Edit `config.yaml` to adjust risk params:
