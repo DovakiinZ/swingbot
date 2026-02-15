@@ -75,3 +75,11 @@ CREATE TABLE IF NOT EXISTS arm_performance (
     pnl_percent REAL,
     outcome TEXT -- WIN/LOSS
 );
+
+CREATE TABLE IF NOT EXISTS polymarket_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER,
+    market_key TEXT,
+    probability REAL,
+    risk_scale REAL
+);

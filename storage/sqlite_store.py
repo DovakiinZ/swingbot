@@ -257,12 +257,32 @@ class SQLiteStore:
         # Or just return 0 if no balance info.
         
         return {
-            "count": count,
-            "pnl": total_pnl,
-            "winrate": winrate,
-            "expectancy": avg_pnl,
-            "max_dd": max_dd_val, # Absolute amount
             "best_arm": best_arm
         }
+
+    def save_polymarket_snapshot(self, timestamp: int, market_key: str, probability: float, risk_scale: float):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO polymarket_snapshots (timestamp, market_key, probability, risk_scale)
+            VALUES (?, ?, ?, ?)
+        """, (timestamp, market_key, probability, risk_scale))
+        conn.commit()
+        conn.close()
+
+    def get_latest_polymarket_snapshot(self) -> Optional[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM polymarket_snapshots 
+            ORDER BY timestamp DESC LIMIT 1
+        """)
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return dict(row)
+        return None
+
 
 

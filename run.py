@@ -24,7 +24,11 @@ from optimize.bandit import Bandit
 from reports.daily_report import DailyReport
 from optimize.param_sets import ARMS
 from data.sentiment import SentimentEngine
+
 from strategy.selector import SymbolSelector
+from data.polymarket_client import PolymarketClient
+from strategy.macro_filter import compute_macro_risk_scale
+
 
 
 # Load Config
@@ -40,10 +44,11 @@ clock = Clock(mode="live")
 logger = logging.getLogger("swingbot")
 
 # Observability Helpers
-def format_status_line(timestamp, symbol, price, signal, pos_state, arm, pnl, breaker, next_check):
+def format_status_line(timestamp, symbol, price, signal, pos_state, arm, pnl, breaker, macro_status, next_check):
     # Retrieve template
     tpl = i18n.get("STATUS_LINE")
     t_str = timestamp.strftime("%H:%M:%S")
+
     
     # Translate values
     sig_key = f"SIGNAL_{signal}" if signal and signal != "-" else "SIGNAL_HOLD"
@@ -75,7 +80,9 @@ def format_status_line(timestamp, symbol, price, signal, pos_state, arm, pnl, br
         pos_state=pos_str,
         arm=arm,
         pnl=pnl,
+
         breaker=breaker_str,
+        macro=macro_status,
         next_wait=next_check
     )
 
@@ -159,6 +166,12 @@ def main():
     reporter = DailyReport(store)
     sentiment_engine = SentimentEngine()
     selector = SymbolSelector(market.exchange)
+    
+    # Polymarket Client
+    poly_client = None
+    if CONFIG.get('polymarket', {}).get('enabled', False):
+         poly_client = PolymarketClient()
+
 
     context = {
         "symbol": args.symbol,
@@ -210,8 +223,11 @@ def main():
             "active_symbol": context['symbol'],
             "price": 0.0,
             "arm": 0,
-            "pnl": 0.0
+            "pnl": 0.0,
+            "macro_prob": 0.0,
+            "risk_scale": 1.0
         }
+
 
         try:
             logger.debug(f"--- Cycle Start: {datetime.now()} ---")
@@ -260,6 +276,48 @@ def main():
                 status['breaker'] = "PAUSED(LOSS_LIMIT)"
                 return
                 
+
+            
+            # 1.5 Macro Risk Filter (Polymarket)
+            if poly_client:
+                pm_conf = CONFIG['polymarket']
+                update_interval_sec = pm_conf.get('update_hours', 6) * 3600
+                last_snap = store.get_latest_polymarket_snapshot()
+                
+                need_update = True
+                if last_snap:
+                    # Check staleness
+                    last_ts = last_snap['timestamp']
+                    if (time.time() - last_ts) < update_interval_sec:
+                        need_update = False
+                        status['macro_prob'] = last_snap['probability']
+                        status['risk_scale'] = last_snap['risk_scale']
+                
+                if need_update:
+                    markets = pm_conf.get('markets', [])
+                    probs = []
+                    for m_id in markets:
+                        p = poly_client.get_probability(m_id)
+                        if p is not None:
+                            probs.append(p)
+                    
+                    if probs:
+                        scale = compute_macro_risk_scale(probs)
+                        avg_p = sum(probs) / len(probs)
+                        store.save_polymarket_snapshot(int(time.time()), "multi", avg_p, scale)
+                        status['macro_prob'] = avg_p
+                        status['risk_scale'] = scale
+                    else:
+                        # Fetch failed? Use default failure scale if no old snapshot
+                        if not last_snap:
+                            status['risk_scale'] = pm_conf.get('default_risk_scale_on_failure', 0.7)
+                        # Else keep using old snapshot implicitly via stale values if we want? 
+                        # Requirements: "if refresh fails: use last snapshot; if none exists use default"
+                        # Logic above handles "use last snapshot" if we don't overwrite status['risk_scale']
+                        if last_snap:
+                             status['risk_scale'] = last_snap['risk_scale']
+                             status['macro_prob'] = last_snap['probability']
+
             # 2. Market Data & Symbol Selection
             current_pos = store.get_open_position() 
             
@@ -320,7 +378,11 @@ def main():
                     elif not safe_to_enter: pass
                     elif not risk_engine.can_open_new_position(0): pass
                     else:
-                        size = risk_engine.calculate_position_size(signal)
+
+                        base_size = risk_engine.calculate_position_size(signal)
+                        # Apply Macro Risk Scale
+                        size = base_size * status.get('risk_scale', 1.0)
+                        
                         market_struct = market.get_market_structure(status['active_symbol'])
                         ok, msg = risk_engine.check_min_notional(size, signal.price, market_struct)
                         if ok:
@@ -355,7 +417,9 @@ def main():
                 status['pos_state'], 
                 status['arm'], 
                 status['pnl'], 
+ 
                 status['breaker'],
+                i18n.get("MACRO_STATUS").format(p=status.get('macro_prob',0), sc=status.get('risk_scale',1)),
                 max(0, next_wait)
             )
             logger.warning(line)

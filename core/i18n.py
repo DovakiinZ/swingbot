@@ -3,7 +3,9 @@ from typing import Dict
 TRANSLATIONS = {
     "en": {
         "CYCLE_START": "--- Cycle Start",
-        "STATUS_LINE": "{timestamp} UTC | {symbol} | ${price:<8.2f} | Sig: {signal:<4} | Pos: {pos_state:<6} | Arm: {arm} | DayPnL: {pnl:>6.2f} | {breaker} | Next: {next_wait}s",
+        "CYCLE_START": "--- Cycle Start",
+        "STATUS_LINE": "{timestamp} UTC | {symbol} | ${price:<8.2f} | Sig: {signal:<4} | Pos: {pos_state:<6} | Arm: {arm} | DayPnL: {pnl:>6.2f} | {breaker} | {macro} | Next: {next_wait}s",
+        "MACRO_STATUS": "Macro: p={p:.2f} sc={sc:.1f}",
         "SIGNAL_BUY": "BUY",
         "SIGNAL_SELL": "SELL",
         "SIGNAL_HOLD": "-",
@@ -52,7 +54,9 @@ TRANSLATIONS = {
         # For Arabic, we might want to adjust the format to be RTL friendly. 
         # Putting numbers/English text in distinct blocks helps.
         # {timestamp} UTC | {symbol} | {price} $ | إشارة: {signal} | وضع: {pos_state} | ذراع: {arm} | ربح: {pnl} | {breaker} | التالي: {next_wait}ث
-        "STATUS_LINE": "{timestamp} UTC | {symbol} | ${price:<8.2f} | إشارة: {signal} | وضع: {pos_state} | إعداد: {arm} | ربح: {pnl:>6.2f} | {breaker} | التالي: {next_wait}ث",
+        # {timestamp} UTC | {symbol} | {price} $ | إشارة: {signal} | وضع: {pos_state} | ذراع: {arm} | ربح: {pnl} | {breaker} | التالي: {next_wait}ث
+        "STATUS_LINE": "{timestamp} UTC | {symbol} | ${price:<8.2f} | إشارة: {signal} | وضع: {pos_state} | إعداد: {arm} | ربح: {pnl:>6.2f} | {breaker} | {macro} | التالي: {next_wait}ث",
+        "MACRO_STATUS": "مؤشر ماكرو: p={p:.2f}, scale={sc:.1f}",
         "SIGNAL_BUY": "شراء",
         "SIGNAL_SELL": "بيع",
         "SIGNAL_HOLD": "-",
