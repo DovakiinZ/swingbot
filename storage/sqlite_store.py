@@ -80,6 +80,36 @@ class SQLiteStore:
         conn.commit()
         conn.close()
 
+    def get_open_positions(self) -> List[Position]:
+        """Return all currently open positions."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM positions WHERE status = 'OPEN'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        positions = []
+        for row in rows:
+            positions.append(Position(
+                id=row['id'],
+                symbol=row['symbol'],
+                side=Side(row['side']),
+                entry_price=row['entry_price'],
+                amount=row['amount'],
+                stop_loss=row['stop_loss'],
+                take_profit=row['take_profit'],
+                entry_time=row['entry_time'],
+                status=PositionStatus(row['status']),
+                exit_price=row['exit_price'],
+                exit_time=row['exit_time'],
+                exit_reason=Reason(row['exit_reason']) if row['exit_reason'] else None,
+                pnl=row['pnl'],
+                pnl_percent=row['pnl_percent'],
+                commission=row['commission'],
+                strategy_params=None
+            ))
+        return positions
+
     def get_open_position(self) -> Optional[Position]:
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -257,7 +287,12 @@ class SQLiteStore:
         # Or just return 0 if no balance info.
         
         return {
-            "best_arm": best_arm
+            "count":       count,
+            "pnl":         total_pnl,
+            "winrate":     winrate,
+            "expectancy":  avg_pnl,
+            "max_dd":      max_dd_val,
+            "best_arm":    best_arm,
         }
 
     def save_polymarket_snapshot(self, timestamp: int, market_key: str, probability: float, risk_scale: float):
