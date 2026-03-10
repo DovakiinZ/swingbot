@@ -96,9 +96,16 @@ class BinanceBroker(Broker):
         return []
 
     def get_open_position(self) -> Optional[Position]:
-        # Needed: Logic to reconcile with Exchange or trust DB?
-        # Trust DB + Verification
         return self.store.get_open_position()
+
+    def get_open_positions(self) -> List[Position]:
+        return self.store.get_open_positions()
+
+    def get_position_by_symbol(self, symbol: str) -> Optional[Position]:
+        for pos in self.store.get_open_positions():
+            if pos.symbol == symbol:
+                return pos
+        return None
 
     def sync(self):
         # Fetch open orders and positions from Binance and update DB
