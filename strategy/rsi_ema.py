@@ -21,12 +21,12 @@ class RsiEmaStrategy:
         curr = df.iloc[-1]
         prev = df.iloc[-2]
 
-        rsi      = curr['rsi']
+        rsi = curr['rsi']
         ema_fast = curr['ema_fast']
         ema_slow = curr['ema_slow']
-        close    = curr['close']
-        atr      = curr['atr']
-        atr_pct  = (atr / close) * 100
+        close = curr['close']
+        atr = curr['atr']
+        atr_pct = (atr / close) * 100
 
         # Never trade in extreme volatility
         if regime == MarketRegime.HIGH_VOLATILITY:
@@ -34,14 +34,14 @@ class RsiEmaStrategy:
 
         if not current_position:
             # ── Entry Logic (Long Only) ───────────────────────────────────────
-            trend_ok = ema_fast > ema_slow          # Uptrend
-            rsi_ok   = rsi < params.rsi_entry       # Oversold
-            vol_ok   = atr_pct < 5.0                # Not too wild
+            trend_ok = ema_fast > ema_slow
+            rsi_ok = rsi < params.rsi_entry
+            vol_ok = atr_pct < 5.0
 
             if trend_ok and rsi_ok and vol_ok:
-                sl_dist    = atr * params.sl_mult
-                tp_dist    = atr * params.tp_mult
-                stop_loss  = close - sl_dist
+                sl_dist = atr * params.sl_mult
+                tp_dist = atr * params.tp_mult
+                stop_loss = close - sl_dist
                 take_profit = close + tp_dist
 
                 return Signal(

@@ -126,3 +126,14 @@ class Trade:
     commission: float
     timestamp: int
     reason: Reason
+
+@dataclass
+class ScanResult:
+    symbol: str
+    score: float
+    rsi: float
+    atr_pct: float
+    volume_rank: int
+    trend: str          # "UP", "DOWN", "FLAT"
+    regime: str         # MarketRegime value
+    scanned_at: int     # timestamp ms

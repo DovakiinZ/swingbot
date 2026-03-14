@@ -83,3 +83,15 @@ CREATE TABLE IF NOT EXISTS polymarket_snapshots (
     probability REAL,
     risk_scale REAL
 );
+
+CREATE TABLE IF NOT EXISTS scan_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT,
+    score REAL,
+    rsi REAL,
+    atr_pct REAL,
+    volume_rank INTEGER,
+    trend TEXT,
+    regime TEXT,
+    scanned_at INTEGER
+);

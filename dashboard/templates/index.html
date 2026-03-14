@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwingBot</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-card: #161b22;
+            --bg-hover: #1c2128;
+            --bg-input: #0d1117;
+            --border: #30363d;
+            --border-light: #21262d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #c9d1d9;
+            --text-muted: #8b949e;
+            --text-faint: #484f58;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --green: #3fb950;
+            --green-bg: #0d3321;
+            --red: #f85149;
+            --red-bg: #3d1316;
+            --yellow: #d29922;
+            --yellow-bg: #2d2a1d;
+            --orange: #db6d28;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            padding: 0;
+            min-height: 100vh;
+        }
+        html[dir="rtl"] body { direction: rtl; }
+
+        /* --- Top Nav --- */
+        .topbar {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-left h1 { font-size: 18px; color: var(--accent); font-weight: 700; }
+        .topbar-left .mode-badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 10px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .mode-paper { background: var(--yellow-bg); color: var(--yellow); }
+        .mode-live { background: var(--red-bg); color: var(--red); }
+        .topbar-right { display: flex; align-items: center; gap: 12px; }
+        .lang-btn {
+            background: var(--bg-primary); border: 1px solid var(--border);
+            color: var(--text-muted); padding: 4px 12px; border-radius: 6px;
+            cursor: pointer; font-size: 13px; transition: all 0.2s;
+        }
+        .lang-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .lang-btn.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
+        .connection-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .dot-red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+        .dot-yellow { background: var(--yellow); }
+
+        /* --- Main Layout --- */
+        .main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+        /* --- Stats Row --- */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .stat-card .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .stat-card .value { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+        .stat-card .value.green { color: var(--green); }
+        .stat-card .value.red { color: var(--red); }
+        .stat-card .value.yellow { color: var(--yellow); }
+        .stat-card .value.sm { font-size: 14px; font-weight: 400; }
+
+        /* --- Cards --- */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .grid-full { grid-column: 1 / -1; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .card-header h2 { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .card-header .count { font-size: 12px; color: var(--text-muted); }
+        .card-body { padding: 0; }
+        .card-body.padded { padding: 16px; }
+
+        /* --- Tables --- */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: var(--text-muted); padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); font-weight: 600; }
+        html[dir="rtl"] th { text-align: right; }
+        td { padding: 10px 16px; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: var(--bg-hover); }
+        .empty-row { text-align: center; color: var(--text-faint); padding: 32px 16px; font-size: 13px; }
+
+        /* --- Badges --- */
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .b-up { background: var(--green-bg); color: var(--green); }
+        .b-down { background: var(--red-bg); color: var(--red); }
+        .b-flat { background: var(--yellow-bg); color: var(--yellow); }
+        .b-trending { background: var(--green-bg); color: var(--green); }
+        .b-ranging { background: var(--yellow-bg); color: var(--yellow); }
+        .b-uncertain { background: var(--bg-hover); color: var(--text-muted); }
+        .b-buy { background: var(--green-bg); color: var(--green); }
+        .b-sell { background: var(--red-bg); color: var(--red); }
+
+        /* --- Score Bar --- */
+        .score-wrap { display: flex; align-items: center; gap: 8px; }
+        .score-bar { background: var(--border-light); border-radius: 3px; height: 4px; width: 60px; flex-shrink: 0; }
+        .score-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+
+        /* --- Allocation Bar --- */
+        .alloc-item { margin-bottom: 12px; }
+        .alloc-header { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 13px; }
+        .alloc-header .sym { color: var(--text-primary); font-weight: 600; }
+        .alloc-header .pct { color: var(--text-muted); }
+        .alloc-bar { background: var(--border-light); border-radius: 4px; height: 6px; }
+        .alloc-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+
+        /* --- Binance Card --- */
+        .binance-form { display: flex; flex-direction: column; gap: 12px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .form-group input {
+            background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+            padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: monospace;
+        }
+        .form-group input:focus { outline: none; border-color: var(--accent); }
+        .btn {
+            padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            cursor: pointer; border: 1px solid var(--border); transition: all 0.2s;
+        }
+        .btn-primary { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+        .btn-danger:hover { background: var(--red-bg); }
+        .btn-row { display: flex; gap: 8px; }
+        .binance-status { font-size: 13px; line-height: 1.6; }
+        .binance-status .kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border-light); }
+        .binance-status .kv:last-child { border-bottom: none; }
+        .binance-status .k { color: var(--text-muted); }
+        .binance-status .v { color: var(--text-primary); font-weight: 500; font-family: monospace; }
+        .msg-ok { color: var(--green); font-size: 12px; margin-top: 4px; }
+        .msg-err { color: var(--red); font-size: 12px; margin-top: 4px; }
+
+        /* --- Footer --- */
+        .footer { text-align: center; color: var(--text-faint); font-size: 11px; padding: 16px; }
+    </style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+    <div class="topbar-left">
+        <h1>SwingBot</h1>
+        <span class="mode-badge mode-paper" id="mode-badge">PAPER</span>
+        <span style="color:var(--text-muted);font-size:12px" id="subtitle"></span>
+    </div>
+    <div class="topbar-right">
+        <span id="binance-dot-wrap" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)">
+            <span class="connection-dot dot-red" id="binance-dot"></span>
+            <span id="binance-dot-label">Binance</span>
+        </span>
+        <button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" id="btn-ar" onclick="setLang('ar')">AR</button>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_OPEN_POSITIONS">Open Positions</div>
+            <div class="value" id="s-positions">0 / 1</div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_BALANCE">Balance</div>
+            <div class="value" id="s-balance">$0.00</div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_DAILY_PNL">Daily PnL</div>
+            <div class="value green" id="s-pnl">$0.00</div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_SCANNER_STATUS">Scanner</div>
+            <div class="value yellow" id="s-scanner">OFF</div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_BREAKER">Circuit Breaker</div>
+            <div class="value green" id="s-breaker">OK</div>
+        </div>
+        <div class="stat-card">
+            <div class="label" data-i18n="DASH_LAST_CYCLE">Last Cycle</div>
+            <div class="value sm" id="s-cycle">-</div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid">
+
+        <!-- Open Positions -->
+        <div class="card">
+            <div class="card-header">
+                <h2 data-i18n="DASH_OPEN_POSITIONS">Open Positions</h2>
+                <span class="count" id="pos-count-label">0</span>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead><tr>
+                        <th data-i18n="DASH_SYMBOL">Symbol</th>
+                        <th data-i18n="DASH_SIDE">Side</th>
+                        <th data-i18n="DASH_ENTRY">Entry</th>
+                        <th data-i18n="DASH_SIZE">Size</th>
+                        <th data-i18n="DASH_SL">SL</th>
+                        <th data-i18n="DASH_TP">TP</th>
+                        <th data-i18n="DASH_UNREALIZED">PnL</th>
+                    </tr></thead>
+                    <tbody id="t-positions">
+                        <tr><td colspan="7" class="empty-row" data-i18n="DASH_NO_POSITIONS">No open positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Portfolio Allocation -->
+        <div class="card">
+            <div class="card-header">
+                <h2 data-i18n="DASH_PORTFOLIO">Portfolio Allocation</h2>
+            </div>
+            <div class="card-body padded" id="alloc-body">
+                <div style="color:var(--text-faint);text-align:center;padding:20px" data-i18n="DASH_NO_ALLOC">No positions to display</div>
+            </div>
+        </div>
+
+        <!-- Binance Account -->
+        <div class="card grid-full">
+            <div class="card-header">
+                <h2 data-i18n="DASH_BINANCE">Binance Account</h2>
+                <span id="binance-header-status" style="font-size:12px;color:var(--text-muted)"></span>
+            </div>
+            <div class="card-body padded" id="binance-body">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+
+        <!-- Scanner Results -->
+        <div class="card grid-full">
+            <div class="card-header">
+                <h2 data-i18n="DASH_SCANNER">Scanner Results</h2>
+                <span class="count" id="scan-count-label">0</span>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead><tr>
+                        <th>#</th>
+                        <th data-i18n="DASH_SYMBOL">Symbol</th>
+                        <th data-i18n="DASH_SCORE">Score</th>
+                        <th>RSI</th>
+                        <th>ATR%</th>
+                        <th data-i18n="DASH_VOL_RANK">Vol Rank</th>
+                        <th data-i18n="DASH_TREND">Trend</th>
+                        <th data-i18n="DASH_REGIME">Regime</th>
+                    </tr></thead>
+                    <tbody id="t-scanner">
+                        <tr><td colspan="8" class="empty-row" data-i18n="DASH_NO_SCAN">No scan results yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="footer" data-i18n="DASH_REFRESH">Auto-refresh every 30s</div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let LANG = 'en';
+let I18N = {};
+const ALLOC_COLORS = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff'];
+
+// ============================================================
+// Language
+// ============================================================
+function setLang(lang) {
+    LANG = lang;
+    document.getElementById('btn-en').className = 'lang-btn' + (lang==='en' ? ' active' : '');
+    document.getElementById('btn-ar').className = 'lang-btn' + (lang==='ar' ? ' active' : '');
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+
+    fetch('/api/lang/' + lang, { method: 'POST' })
+        .then(() => fetch('/api/lang'))
+        .then(r => r.json())
+        .then(data => {
+            I18N = data.strings || {};
+            applyI18n();
+        })
+        .catch(() => {});
+}
+
+function t(key) { return I18N[key] || key; }
+
+function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (I18N[key]) el.textContent = I18N[key];
+    });
+    document.getElementById('subtitle').textContent = t('DASH_SUBTITLE');
+    // Re-render dynamic content
+    fetchData();
+    fetchBinanceStatus();
+}
+
+// ============================================================
+// Data Fetching
+// ============================================================
+function fetchData() {
+    // Status
+    fetch('/api/status').then(r=>r.json()).then(d => {
+        document.getElementById('s-positions').textContent = (d.open_positions_count||0) + ' / ' + (d.max_positions||1);
+        document.getElementById('s-balance').textContent = '$' + (d.total_balance||0).toFixed(2);
+
+        const pnl = d.daily_pnl||0;
+        const pe = document.getElementById('s-pnl');
+        pe.textContent = (pnl>=0?'+':'') + '$' + pnl.toFixed(2);
+        pe.className = 'value ' + (pnl>=0?'green':'red');
+
+        const sc = document.getElementById('s-scanner');
+        sc.textContent = d.scanner_enabled ? (LANG==='ar'?'مفعّل':'ON') : (LANG==='ar'?'معطّل':'OFF');
+        sc.className = 'value ' + (d.scanner_enabled ? 'green' : 'yellow');
+
+        const br = d.breaker_status||'OK';
+        const be = document.getElementById('s-breaker');
+        be.textContent = br==='OK' ? t('BREAKER_OK') : br;
+        be.className = 'value ' + (br==='OK'?'green':'red');
+
+        document.getElementById('s-cycle').textContent = d.last_cycle ? new Date(d.last_cycle).toLocaleTimeString() : '-';
+    }).catch(()=>{});
+
+    // Positions
+    fetch('/api/positions').then(r=>r.json()).then(positions => {
+        const tbody = document.getElementById('t-positions');
+        const cntEl = document.getElementById('pos-count-label');
+        if (!positions || positions.length===0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-row">'+t('DASH_NO_POSITIONS')+'</td></tr>';
+            cntEl.textContent = '0';
+            document.getElementById('alloc-body').innerHTML = '<div style="color:var(--text-faint);text-align:center;padding:20px">'+t('DASH_NO_ALLOC')+'</div>';
+            return;
+        }
+        cntEl.textContent = positions.length;
+        let html = '';
+        let totalVal = 0;
+        positions.forEach(p => { totalVal += (p.entry_price*p.amount)||0; });
+        positions.forEach(p => {
+            const u = p.unrealized_pnl||0;
+            const cls = u>=0?'green':'red';
+            const sideClass = (p.side||'BUY')==='BUY'?'b-buy':'b-sell';
+            const sideTxt = (p.side||'BUY')==='BUY'? t('SIGNAL_BUY') : t('SIGNAL_SELL');
+            html += '<tr>' +
+                '<td style="color:var(--text-primary);font-weight:600">'+p.symbol+'</td>' +
+                '<td><span class="badge '+sideClass+'">'+sideTxt+'</span></td>' +
+                '<td>'+(p.entry_price||0).toFixed(4)+'</td>' +
+                '<td>'+(p.amount||0).toFixed(6)+'</td>' +
+                '<td style="color:var(--red)">'+(p.stop_loss||0).toFixed(4)+'</td>' +
+                '<td style="color:var(--green)">'+(p.take_profit||0).toFixed(4)+'</td>' +
+                '<td style="color:var(--'+cls+')">'+(u>=0?'+':'')+u.toFixed(4)+'</td>' +
+                '</tr>';
+        });
+        tbody.innerHTML = html;
+
+        // Allocation
+        let allocHtml = '';
+        positions.forEach((p,i) => {
+            const val = (p.entry_price*p.amount)||0;
+            const pct = totalVal>0 ? (val/totalVal*100) : 0;
+            const color = ALLOC_COLORS[i%ALLOC_COLORS.length];
+            allocHtml += '<div class="alloc-item">' +
+                '<div class="alloc-header"><span class="sym">'+p.symbol+'</span><span class="pct">'+pct.toFixed(1)+'% &mdash; $'+val.toFixed(2)+'</span></div>' +
+                '<div class="alloc-bar"><div class="alloc-fill" style="width:'+pct+'%;background:'+color+'"></div></div></div>';
+        });
+        document.getElementById('alloc-body').innerHTML = allocHtml;
+    }).catch(()=>{});
+
+    // Scanner
+    fetch('/api/scanner').then(r=>r.json()).then(results => {
+        const tbody = document.getElementById('t-scanner');
+        const cntEl = document.getElementById('scan-count-label');
+        if (!results || results.length===0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-row">'+t('DASH_NO_SCAN')+'</td></tr>';
+            cntEl.textContent = '0';
+            return;
+        }
+        cntEl.textContent = results.length;
+        let html = '';
+        const trendMap = {'UP':'b-up','DOWN':'b-down','FLAT':'b-flat'};
+        const trendLabel = {'UP': LANG==='ar'?'صاعد':'UP', 'DOWN': LANG==='ar'?'هابط':'DOWN', 'FLAT': LANG==='ar'?'ثابت':'FLAT'};
+        const regimeMap = {'TRENDING':'b-trending','RANGING':'b-ranging','UNCERTAIN':'b-uncertain'};
+        const regimeLabel = {'TRENDING': LANG==='ar'?'متجه':'TRENDING', 'RANGING': LANG==='ar'?'متذبذب':'RANGING', 'UNCERTAIN': LANG==='ar'?'غير واضح':'UNCERTAIN'};
+        results.forEach((r,i) => {
+            const sp = Math.round(r.score*100);
+            html += '<tr>' +
+                '<td style="color:var(--text-muted)">'+(i+1)+'</td>' +
+                '<td style="color:var(--text-primary);font-weight:600">'+r.symbol+'</td>' +
+                '<td><div class="score-wrap"><span>'+r.score.toFixed(3)+'</span><div class="score-bar"><div class="score-fill" style="width:'+sp+'%"></div></div></div></td>' +
+                '<td>'+r.rsi.toFixed(1)+'</td>' +
+                '<td>'+r.atr_pct.toFixed(2)+'%</td>' +
+                '<td>'+r.volume_rank+'</td>' +
+                '<td><span class="badge '+(trendMap[r.trend]||'b-flat')+'">'+(trendLabel[r.trend]||r.trend)+'</span></td>' +
+                '<td><span class="badge '+(regimeMap[r.regime]||'b-uncertain')+'">'+(regimeLabel[r.regime]||r.regime)+'</span></td>' +
+                '</tr>';
+        });
+        tbody.innerHTML = html;
+    }).catch(()=>{});
+}
+
+// ============================================================
+// Binance Account
+// ============================================================
+function fetchBinanceStatus() {
+    fetch('/api/binance/status').then(r=>r.json()).then(d => {
+        const dot = document.getElementById('binance-dot');
+        const label = document.getElementById('binance-dot-label');
+        const hdr = document.getElementById('binance-header-status');
+        const body = document.getElementById('binance-body');
+
+        if (d.connected) {
+            dot.className = 'connection-dot dot-green';
+            label.textContent = t('DASH_CONNECTED');
+            hdr.innerHTML = '<span style="color:var(--green)">'+t('DASH_CONNECTED')+'</span>';
+            body.innerHTML = '<div class="binance-status">' +
+                '<div class="kv"><span class="k">'+t('DASH_API_KEY')+'</span><span class="v">'+d.masked_key+'</span></div>' +
+                '<div class="kv"><span class="k">USDT ('+( LANG==='ar'?'متاح':'Free')+')</span><span class="v">$'+d.usdt_free+'</span></div>' +
+                '<div class="kv"><span class="k">USDT ('+( LANG==='ar'?'إجمالي':'Total')+')</span><span class="v">$'+d.usdt_total+'</span></div>' +
+                '<div class="kv"><span class="k">BTC</span><span class="v">'+d.btc_total+'</span></div>' +
+                '</div>' +
+                '<div style="margin-top:12px"><button class="btn btn-danger" onclick="disconnectBinance()">'+t('DASH_DISCONNECT')+'</button></div>';
+        } else if (d.has_keys && d.error) {
+            dot.className = 'connection-dot dot-yellow';
+            label.textContent = d.error.substring(0,30);
+            hdr.innerHTML = '<span style="color:var(--yellow)">'+(LANG==='ar'?'خطأ في الاتصال':'Connection Error')+'</span>';
+            renderBinanceForm(d.error);
+        } else {
+            dot.className = 'connection-dot dot-red';
+            label.textContent = t('DASH_NOT_CONNECTED');
+            hdr.innerHTML = '<span style="color:var(--text-muted)">'+t('DASH_NOT_CONNECTED')+'</span>';
+            renderBinanceForm();
+        }
+    }).catch(()=>{});
+}
+
+function renderBinanceForm(errMsg) {
+    const body = document.getElementById('binance-body');
+    body.innerHTML = '<div class="binance-form">' +
+        '<p style="font-size:13px;color:var(--text-muted);margin-bottom:4px">' +
+            (LANG==='ar'
+                ? 'أدخل مفاتيح API من حساب بينانس الخاص بك. استخدم مفاتيح <b>قراءة + تداول فقط</b> (بدون سحب).'
+                : 'Enter your Binance API keys. Use <b>Read + Trade only</b> keys (no withdrawal).') +
+        '</p>' +
+        (errMsg ? '<div class="msg-err">'+errMsg+'</div>' : '') +
+        '<div class="form-group"><label>'+t('DASH_API_KEY')+'</label><input type="text" id="inp-key" placeholder="xxxxxxxxxxxxxxxx" autocomplete="off"></div>' +
+        '<div class="form-group"><label>'+t('DASH_API_SECRET')+'</label><input type="password" id="inp-secret" placeholder="xxxxxxxxxxxxxxxx" autocomplete="off"></div>' +
+        '<div class="btn-row"><button class="btn btn-primary" onclick="connectBinance()" id="btn-connect">'+t('DASH_TEST_CONNECTION')+'</button></div>' +
+        '<div id="connect-msg"></div>' +
+        '</div>';
+}
+
+function connectBinance() {
+    const key = document.getElementById('inp-key').value.trim();
+    const secret = document.getElementById('inp-secret').value.trim();
+    const msgEl = document.getElementById('connect-msg');
+    const btn = document.getElementById('btn-connect');
+
+    if (!key || !secret) {
+        msgEl.innerHTML = '<div class="msg-err">'+(LANG==='ar'?'يرجى إدخال المفتاحين':'Please enter both keys')+'</div>';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = LANG==='ar' ? 'جاري الاختبار...' : 'Testing...';
+    msgEl.innerHTML = '';
+
+    fetch('/api/binance/connect', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ api_key: key, api_secret: secret })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.ok) {
+            msgEl.innerHTML = '<div class="msg-ok">'+t('DASH_CONNECTION_SUCCESS')+' (USDT: $'+d.usdt_total+')</div>';
+            setTimeout(() => fetchBinanceStatus(), 1000);
+        } else {
+            msgEl.innerHTML = '<div class="msg-err">'+(d.error || t('DASH_CONNECTION_FAIL'))+'</div>';
+        }
+        btn.disabled = false;
+        btn.textContent = t('DASH_TEST_CONNECTION');
+    })
+    .catch(() => {
+        msgEl.innerHTML = '<div class="msg-err">Network error</div>';
+        btn.disabled = false;
+        btn.textContent = t('DASH_TEST_CONNECTION');
+    });
+}
+
+function disconnectBinance() {
+    if (!confirm(LANG==='ar' ? 'هل تريد حذف مفاتيح API?' : 'Remove Binance API keys?')) return;
+    fetch('/api/binance/disconnect', { method: 'POST' })
+        .then(() => fetchBinanceStatus())
+        .catch(() => {});
+}
+
+// ============================================================
+// Init
+// ============================================================
+fetch('/api/lang').then(r=>r.json()).then(d => {
+    LANG = d.lang || 'en';
+    I18N = d.strings || {};
+    document.getElementById('btn-en').className = 'lang-btn' + (LANG==='en'?' active':'');
+    document.getElementById('btn-ar').className = 'lang-btn' + (LANG==='ar'?' active':'');
+    if (LANG==='ar') { document.documentElement.dir='rtl'; document.documentElement.lang='ar'; }
+    applyI18n();
+}).catch(() => { fetchData(); fetchBinanceStatus(); });
+
+setInterval(fetchData, 30000);
+setInterval(fetchBinanceStatus, 60000);
+</script>
+</body>
+</html>

@@ -18,18 +18,16 @@ class PaperBroker(Broker):
         self.balance = initial_balance
         self.slippage = slippage
         self.fee = fee
-        # Multi-position support: keyed by symbol
-        self._positions: Dict[str, Position] = {}
+        self._positions: Dict[str, Position] = {}  # keyed by symbol
         self._orders: Dict[str, Order] = {}
 
-        # Restore any open positions from DB on startup
+        # Load state from DB
         for pos in self.store.get_open_positions():
             self._positions[pos.symbol] = pos
 
     # ─── Balance ──────────────────────────────────────────────────────────────
 
     def get_balance(self) -> float:
-        """Cash available for new purchases."""
         return self.balance
 
     # ─── Orders ───────────────────────────────────────────────────────────────
@@ -72,10 +70,11 @@ class PaperBroker(Broker):
     # ─── Position management ──────────────────────────────────────────────────
 
     def _update_position(self, order: Order, signal: Signal):
+        symbol = order.symbol
         if order.side == Side.BUY:
             pos = Position(
                 id=str(uuid.uuid4()),
-                symbol=order.symbol,
+                symbol=symbol,
                 side=Side.BUY,
                 entry_price=order.filled_price,
                 amount=order.filled_amount,
@@ -86,13 +85,11 @@ class PaperBroker(Broker):
                 strategy_params=signal.params,
                 commission=order.filled_amount * order.filled_price * self.fee
             )
-            self._positions[order.symbol] = pos
+            self._positions[symbol] = pos
             self.store.save_position(pos)
 
-        elif order.side == Side.SELL:
-            pos = self._positions.get(order.symbol)
-            if not pos:
-                return
+        elif order.side == Side.SELL and symbol in self._positions:
+            pos = self._positions[symbol]
             pos.status = PositionStatus.CLOSED
             pos.exit_price = order.filled_price
             pos.exit_time = order.timestamp
@@ -101,16 +98,16 @@ class PaperBroker(Broker):
             pos.pnl -= (pos.commission + (order.filled_amount * order.filled_price * self.fee))
             pos.pnl_percent = (pos.pnl / (pos.entry_price * pos.amount)) * 100
             self.store.save_position(pos)
-            del self._positions[order.symbol]
+            del self._positions[symbol]
 
     def cancel_order(self, order_id: str) -> bool:
-        return True  # Immediate fills in paper mode
+        return True
 
     def get_open_orders(self) -> List[Order]:
         return []
 
     def get_open_position(self) -> Optional[Position]:
-        """Backward-compat: return any single open position, or None."""
+        """Backward compat: returns first open position."""
         if self._positions:
             return next(iter(self._positions.values()))
         return None
@@ -118,7 +115,7 @@ class PaperBroker(Broker):
     def get_open_positions(self) -> List[Position]:
         return list(self._positions.values())
 
-    def get_position_by_symbol(self, symbol: str) -> Optional[Position]:
+    def get_position_for_symbol(self, symbol: str) -> Optional[Position]:
         return self._positions.get(symbol)
 
     def sync(self):
@@ -141,7 +138,6 @@ class PaperBroker(Broker):
         if not pos:
             return None
 
-        # Stop-loss
         if pos.stop_loss and candle.low <= pos.stop_loss:
             return Signal(
                 symbol=pos.symbol,
@@ -150,8 +146,6 @@ class PaperBroker(Broker):
                 price=pos.stop_loss,
                 stop_loss=0, take_profit=0
             )
-
-        # Take-profit
         if pos.take_profit and candle.high >= pos.take_profit:
             return Signal(
                 symbol=pos.symbol,
@@ -162,3 +156,7 @@ class PaperBroker(Broker):
             )
 
         return None
+
+    def check_sl_tp_for_symbol(self, symbol: str, candle: Candle) -> Optional[Signal]:
+        """Check SL/TP for a specific symbol's position."""
+        return self.check_sl_tp(candle, symbol=symbol)

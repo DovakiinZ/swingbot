@@ -1,7 +1,7 @@
 import sqlite3
 import json
 from typing import List, Optional, Dict, Any
-from core.types import Candle, Order, Position, Trade, OrderStatus, PositionStatus, Side, OrderType, Reason
+from core.types import Candle, Order, Position, Trade, OrderStatus, PositionStatus, Side, OrderType, Reason, ScanResult
 
 class SQLiteStore:
     def __init__(self, db_path: str = "swingbot.db"):
@@ -138,6 +138,95 @@ class SQLiteStore:
             commission=row['commission'],
             strategy_params=None # Can reload if needed, simplified for now
         )
+
+    def get_open_positions(self) -> List[Position]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM positions WHERE status = 'OPEN'")
+        rows = cursor.fetchall()
+        conn.close()
+
+        positions = []
+        for row in rows:
+            positions.append(Position(
+                id=row['id'],
+                symbol=row['symbol'],
+                side=Side(row['side']),
+                entry_price=row['entry_price'],
+                amount=row['amount'],
+                stop_loss=row['stop_loss'],
+                take_profit=row['take_profit'],
+                entry_time=row['entry_time'],
+                status=PositionStatus(row['status']),
+                exit_price=row['exit_price'],
+                exit_time=row['exit_time'],
+                exit_reason=Reason(row['exit_reason']) if row['exit_reason'] else None,
+                pnl=row['pnl'],
+                pnl_percent=row['pnl_percent'],
+                commission=row['commission'],
+                strategy_params=None
+            ))
+        return positions
+
+    def get_open_position_for_symbol(self, symbol: str) -> Optional[Position]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM positions WHERE status = 'OPEN' AND symbol = ?", (symbol,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return Position(
+            id=row['id'],
+            symbol=row['symbol'],
+            side=Side(row['side']),
+            entry_price=row['entry_price'],
+            amount=row['amount'],
+            stop_loss=row['stop_loss'],
+            take_profit=row['take_profit'],
+            entry_time=row['entry_time'],
+            status=PositionStatus(row['status']),
+            exit_price=row['exit_price'],
+            exit_time=row['exit_time'],
+            exit_reason=Reason(row['exit_reason']) if row['exit_reason'] else None,
+            pnl=row['pnl'],
+            pnl_percent=row['pnl_percent'],
+            commission=row['commission'],
+            strategy_params=None
+        )
+
+    def save_scan_results(self, results: List[ScanResult]):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Clear old results before inserting new batch
+        cursor.execute("DELETE FROM scan_results")
+        data = [(r.symbol, r.score, r.rsi, r.atr_pct, r.volume_rank, r.trend, r.regime, r.scanned_at) for r in results]
+        cursor.executemany("""
+            INSERT INTO scan_results (symbol, score, rsi, atr_pct, volume_rank, trend, regime, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, data)
+        conn.commit()
+        conn.close()
+
+    def get_latest_scan_results(self) -> List[ScanResult]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM scan_results ORDER BY score DESC")
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [ScanResult(
+            symbol=row['symbol'],
+            score=row['score'],
+            rsi=row['rsi'],
+            atr_pct=row['atr_pct'],
+            volume_rank=row['volume_rank'],
+            trend=row['trend'],
+            regime=row['regime'],
+            scanned_at=row['scanned_at']
+        ) for row in rows]
 
     def get_open_orders(self) -> List[Order]:
         conn = self.get_connection()
