@@ -1,6 +1,8 @@
 import logging
 import json
 import os
+import sys
+import io
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from typing import Any
@@ -10,24 +12,24 @@ def setup_logging(log_dir: str = "logs", console: bool = True, console_level: st
         os.makedirs(log_dir)
 
     log_file = os.path.join(log_dir, f"swingbot_{datetime.now().strftime('%Y-%m-%d')}.log")
-    
+
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG) # Catch all, filter by handler
 
     # Clear existing handlers to avoid duplicates
     root_logger.handlers = []
 
-    # File Handler
-    file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5)
+    # File Handler (UTF-8 for Arabic support)
+    file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     file_handler.setLevel(getattr(logging, file_level.upper(), logging.INFO))
     root_logger.addHandler(file_handler)
 
-    # Console Handler
+    # Console Handler (UTF-8 stream for Windows Arabic support)
     if console:
-        console_handler = logging.StreamHandler()
-        # Concise format for console
-        console_handler.setFormatter(logging.Formatter('%(message)s')) 
+        stream = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        console_handler = logging.StreamHandler(stream)
+        console_handler.setFormatter(logging.Formatter('%(message)s'))
         console_handler.setLevel(getattr(logging, console_level.upper(), logging.WARNING))
         root_logger.addHandler(console_handler)
 

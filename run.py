@@ -10,6 +10,12 @@ import time
 from datetime import datetime
 import sys
 import os
+
+# Fix Windows console encoding for Arabic/Unicode output
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import yaml
 import logging
 import schedule
