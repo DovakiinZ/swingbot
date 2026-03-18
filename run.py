@@ -46,6 +46,10 @@ from data.polymarket_client import PolymarketClient
 from strategy.macro_filter import compute_macro_risk_scale
 from signals.dump_btc import get_btc_risk_factor_for_symbol
 from ml.model import SwingbotModel
+from core.notifier import Notifier
+from core.trading_hours import is_good_time_to_trade
+from risk.conservative_mode import ConservativeMode
+from reports.weekly_report import WeeklyReport
 
 # --- Config -------------------------------------------------------------------
 load_dotenv()
@@ -97,7 +101,9 @@ def _passes_entry_checklist(
 
 # --- Dashboard ----------------------------------------------------------------
 
-def start_dashboard(config: dict, store_inst, state_dict) -> None:
+def start_dashboard(config: dict, store_inst, state_dict,
+                    notifier_inst=None, conservative_inst=None,
+                    weekly_report_inst=None) -> None:
     """Start Flask dashboard in a background daemon thread."""
     if not config.get('dashboard', {}).get('enabled', True):
         return
@@ -106,6 +112,11 @@ def start_dashboard(config: dict, store_inst, state_dict) -> None:
     app = create_app(store=store_inst, state=state_dict, config=config)
     if app is None:
         return
+
+    # Inject shared objects for dashboard routes
+    app.config['notifier'] = notifier_inst
+    app.config['conservative_mode'] = conservative_inst
+    app.config['weekly_report'] = weekly_report_inst
 
     port = config.get('dashboard', {}).get('port', 8080)
     host = config.get('dashboard', {}).get('host', '0.0.0.0')
@@ -268,6 +279,11 @@ def main():
 
     allow_short = CONFIG.get('allow_short', True)
 
+    # Week 1 features
+    notifier          = Notifier(CONFIG)
+    conservative_mode = ConservativeMode(store, CONFIG)
+    weekly_report     = WeeklyReport(store, CONFIG)
+
     poly_client = None
     if CONFIG.get('polymarket', {}).get('enabled', False):
         poly_client = PolymarketClient()
@@ -300,7 +316,10 @@ def main():
     }
 
     # --- Dashboard start ------------------------------------------------------
-    start_dashboard(CONFIG, store, dashboard_state)
+    start_dashboard(CONFIG, store, dashboard_state,
+                    notifier_inst=notifier,
+                    conservative_inst=conservative_mode,
+                    weekly_report_inst=weekly_report)
 
     # --- Startup Banner -------------------------------------------------------
     mode_str = i18n.get("MODE_LIVE") if is_live else i18n.get("MODE_PAPER")
@@ -343,6 +362,18 @@ def main():
     def job():
         nonlocal last_summary_date
         cycle_start = time.time()
+
+        # Reload config from file each cycle (dashboard changes apply immediately)
+        try:
+            with open("config.yaml", "r", encoding="utf-8") as f:
+                fresh_config = yaml.safe_load(f)
+            CONFIG.clear()
+            CONFIG.update(fresh_config)
+            notifier.config = CONFIG
+            notifier.notif_config = CONFIG.get('notifications', {})
+            conservative_mode.config = CONFIG
+        except Exception:
+            pass
 
         status = {
             "signal": None,
@@ -410,6 +441,10 @@ def main():
                 logger.critical("Daily loss limit hit -- halting for the day.")
                 store.update_daily_stats(today_str, {'paused_until': 'Next Day'})
                 circuit_breaker_ok = False
+                try:
+                    notifier.notify_circuit_breaker(f"Daily loss: ${day_pnl:.2f}")
+                except Exception:
+                    pass
                 return
 
             # -- Macro risk filter ---------------------------------------------
@@ -531,6 +566,12 @@ def main():
                                 exit_reason=sig.reason.value,
                                 hold_hours=hold_hours
                             )
+                            # Notify exit
+                            try:
+                                notifier.notify_exit(sym, sig.reason.value, pnl, pnl_pct,
+                                                     pos.entry_price, sig.price)
+                            except Exception:
+                                pass
 
                         status['pos_state'] = "CLOSING"
                         continue
@@ -557,6 +598,12 @@ def main():
                                     exit_reason=exit_sig.reason.value,
                                     hold_hours=hold_hours
                                 )
+                                # Notify SL/TP exit
+                                try:
+                                    notifier.notify_exit(sym, exit_sig.reason.value, pnl, pnl_pct,
+                                                         pos.entry_price, exit_sig.price)
+                                except Exception:
+                                    pass
 
                             status['pos_state'] = "CLOSING_SLTP"
 
@@ -573,7 +620,29 @@ def main():
                 logger.warning("[SCAN] All position slots filled -- skipping entry scan.")
                 _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
                 _log_status(status, time.time() - cycle_start, scan_interval_sec)
+                # Weekly report check + daily report
+                weekly_report.check_and_send(notifier)
                 return
+
+            # -- Trading hours filter ------------------------------------------
+            hours_ok, hours_reason = is_good_time_to_trade(CONFIG)
+            if not hours_ok:
+                logger.warning(f"[HOURS] {hours_reason}")
+                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
+                _log_status(status, time.time() - cycle_start, scan_interval_sec)
+                weekly_report.check_and_send(notifier)
+                return
+
+            # -- Conservative mode check ---------------------------------------
+            conservative, risk_mult, c_reason = conservative_mode.check(
+                recent_trades=store.get_last_n_trades(10),
+                day_pnl=day_pnl,
+                daily_limit=CONFIG['daily_loss_limit_percent'],
+                peak_balance=peak_balance,
+                current_balance=current_bal
+            )
+            if conservative:
+                logger.warning(f"[CONSERVATIVE] {c_reason} → risk x{risk_mult}")
 
             if not sentiment_ok:
                 _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
@@ -718,7 +787,7 @@ def main():
                 base_size = risk_engine.calculate_position_size(
                     sig, reserved_capital=reserved, dynamic_risk_pct=dynamic_risk
                 )
-                size = base_size * status.get('risk_scale', 1.0) * btc_factor
+                size = base_size * status.get('risk_scale', 1.0) * btc_factor * (risk_mult if conservative else 1.0)
 
                 # Breakout size multiplier
                 if breakout_detected:
@@ -761,6 +830,12 @@ def main():
                     ml_features['symbol'] = sym
                     store.save_trade_features(ml_features)
 
+                    # Notify entry
+                    try:
+                        notifier.notify_entry(sym, sig, size, cand_score, arm_idx)
+                    except Exception:
+                        pass
+
                     status['pos_state'] = "OPENING"
                     status['signal'] = sig.side.value
                     status['arm'] = arm_idx
@@ -785,6 +860,23 @@ def main():
             if scanner_enabled and open_positions:
                 logger.warning(f"  Open Positions ({len(open_positions)}/{max_positions}): " +
                              ", ".join(f"{p.symbol}@{p.entry_price:.2f}" for p in open_positions))
+
+            # Weekly report check
+            try:
+                weekly_report.check_and_send(notifier)
+            except Exception as e:
+                logger.error(f"Weekly report check failed: {e}")
+
+            # Daily report (at configured hour)
+            try:
+                report_hour = CONFIG.get('notifications', {}).get('daily_report_hour_utc', 8)
+                now_utc = datetime.utcnow()
+                if now_utc.hour == report_hour and now_utc.minute < 11:
+                    stats = store.get_daily_trade_stats(today_str)
+                    if stats.get('count', 0) > 0:
+                        notifier.notify_daily_report(stats)
+            except Exception as e:
+                logger.error(f"Daily report failed: {e}")
 
         except Exception as e:
             logger.error(f"Cycle Error: {e}", exc_info=True)

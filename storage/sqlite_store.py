@@ -453,6 +453,20 @@ class SQLiteStore:
         df = pd.DataFrame([dict(row) for row in rows])
         return df
 
+    def get_last_n_trades(self, n: int = 10) -> list:
+        """Get the last N closed trades, most recent first."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM positions
+            WHERE status = 'CLOSED'
+            ORDER BY exit_time DESC
+            LIMIT ?
+        """, (n,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
     def get_training_data_count(self) -> int:
         """Returns number of completed labeled training samples."""
         conn = self.get_connection()

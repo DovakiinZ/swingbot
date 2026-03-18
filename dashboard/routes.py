@@ -1,6 +1,7 @@
 """
 Dashboard REST API routes with password protection.
 Mobile-first dashboard for swingbot trading bot.
+Full API: status, positions, history, settings, notifications, weekly reports.
 """
 import os
 import json
@@ -21,6 +22,8 @@ except ImportError:
 # Resolve project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
+CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+LIVE_OK_PATH = PROJECT_ROOT / "LIVE_OK.txt"
 
 # Login page HTML
 LOGIN_HTML = """
@@ -31,26 +34,26 @@ LOGIN_HTML = """
     <title>Swingbot Login</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0d0d0d; color: #fff; font-family: system-ui, -apple-system, sans-serif;
+        body { background: #080b10; color: #fff; font-family: 'Tajawal', system-ui, -apple-system, sans-serif;
                display: flex; align-items: center; justify-content: center;
                min-height: 100vh; }
-        .card { background: #1a1a2e; border-radius: 16px; padding: 40px 32px;
-                width: 100%; max-width: 360px; margin: 20px; }
-        h1 { font-size: 24px; margin-bottom: 8px; }
+        .card { background: #121820; border-radius: 16px; padding: 40px 32px;
+                width: 100%; max-width: 360px; margin: 20px; border: 1px solid #1e2a38; }
+        h1 { font-size: 24px; margin-bottom: 8px; color: #00e5a0; }
         p { color: #888; font-size: 14px; margin-bottom: 32px; }
-        input { width: 100%; padding: 14px 16px; background: #0d0d0d;
-                border: 1px solid #333; border-radius: 10px; color: #fff;
+        input { width: 100%; padding: 14px 16px; background: #080b10;
+                border: 1px solid #1e2a38; border-radius: 10px; color: #fff;
                 font-size: 16px; margin-bottom: 16px; }
-        button { width: 100%; padding: 14px; background: #00ff88;
-                 color: #000; border: none; border-radius: 10px;
+        button { width: 100%; padding: 14px; background: #00e5a0;
+                 color: #080b10; border: none; border-radius: 10px;
                  font-size: 16px; font-weight: 700; cursor: pointer; }
-        button:hover { background: #00cc6e; }
-        .error { color: #ff4757; font-size: 14px; margin-bottom: 16px; }
+        button:hover { background: #00cc8e; }
+        .error { color: #ff3d5a; font-size: 14px; margin-bottom: 16px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Swingbot</h1>
+        <h1>swingbot</h1>
         <p>Enter your dashboard password</p>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST">
@@ -100,6 +103,22 @@ def _write_env(env: dict):
     ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _load_config() -> dict:
+    """Load config.yaml."""
+    import yaml
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def _save_config(cfg: dict) -> None:
+    """Save config.yaml."""
+    import yaml
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+
 def create_app(store=None, state=None, config: dict = None):
     """Create Flask app with dashboard routes and password protection."""
     if not FLASK_AVAILABLE:
@@ -112,6 +131,11 @@ def create_app(store=None, state=None, config: dict = None):
 
     app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-change-me')
     DASHBOARD_PASSWORD = os.getenv('DASHBOARD_PASSWORD', 'swingbot123')
+
+    # ── Shared objects (set later by run.py via app.config) ────────────
+    app.config['notifier'] = None
+    app.config['conservative_mode'] = None
+    app.config['weekly_report'] = None
 
     # --- Auth decorator --------------------------------------------------------
 
@@ -147,7 +171,7 @@ def create_app(store=None, state=None, config: dict = None):
     def index():
         return render_template("index.html")
 
-    # --- Status & Data APIs ----------------------------------------------------
+    # ── Bot Data APIs ──────────────────────────────────────────────────
 
     @app.route("/api/status")
     @login_required
@@ -157,10 +181,10 @@ def create_app(store=None, state=None, config: dict = None):
 
         snapshot = state.snapshot() if hasattr(state, 'snapshot') else state
 
-        # Compute next scan seconds from last_cycle
+        # Compute next scan seconds
         next_scan = 0
         last_cycle = snapshot.get('last_cycle')
-        interval = 600  # default 10 min
+        interval = 600
         if config:
             interval = config.get('scan_interval_minutes', 10) * 60
         if last_cycle:
@@ -172,18 +196,61 @@ def create_app(store=None, state=None, config: dict = None):
             except Exception:
                 next_scan = 0
 
+        # Conservative mode status
+        cm_status = {"active": False, "reason": "OK", "wins_needed_to_exit": 0}
+        cm = app.config.get('conservative_mode')
+        if cm:
+            try:
+                cm_status = cm.get_status()
+            except Exception:
+                pass
+
+        # Trading hours
+        trading_hours_ok = True
+        trading_hours_reason = "OK"
+        try:
+            from core.trading_hours import is_good_time_to_trade
+            cfg = config or _load_config()
+            trading_hours_ok, trading_hours_reason = is_good_time_to_trade(cfg)
+        except Exception:
+            pass
+
+        # Compounding phase
+        base_balance = (config or {}).get('base_balance', 100.0)
+        balance = snapshot.get('total_balance', 0)
+        if balance >= base_balance * 5.0:
+            phase = 3
+        elif balance >= base_balance * 2.5:
+            phase = 2
+        else:
+            phase = 1
+
+        phase_targets = {1: base_balance * 2.5, 2: base_balance * 5.0, 3: base_balance * 10.0}
+        phase_starts = {1: base_balance, 2: base_balance * 2.5, 3: base_balance * 5.0}
+        target = phase_targets.get(phase, base_balance * 10)
+        start = phase_starts.get(phase, base_balance)
+        phase_progress = ((balance - start) / (target - start) * 100) if target > start else 0
+
         return jsonify({
             'balance': snapshot.get('total_balance', 0),
             'mode': 'live' if snapshot.get('is_live', False) else 'paper',
             'day_pnl': snapshot.get('daily_pnl', 0),
             'day_pnl_pct': snapshot.get('daily_pnl_pct', 0),
             'circuit_breaker': snapshot.get('breaker_status', 'OK'),
+            'conservative_mode': cm_status,
             'sentiment_ok': snapshot.get('sentiment_ok', True),
             'macro_scale': snapshot.get('macro_scale', 1.0),
             'ai_confidence': snapshot.get('ai_confidence'),
             'next_scan_seconds': next_scan,
+            'trading_hours_ok': trading_hours_ok,
+            'trading_hours_reason': trading_hours_reason,
             'scan_results': snapshot.get('scan_results', []),
             'open_positions_count': snapshot.get('open_positions_count', 0),
+            'max_open_positions': (config or {}).get('max_open_positions', 3),
+            'scan_top_n': (config or {}).get('scan_top_n', 20),
+            'scan_interval_minutes': (config or {}).get('scan_interval_minutes', 10),
+            'compounding_phase': phase,
+            'phase_progress_pct': round(phase_progress, 1),
             'last_updated': snapshot.get('last_cycle', ''),
         })
 
@@ -232,7 +299,6 @@ def create_app(store=None, state=None, config: dict = None):
                 'win_streak': 0, 'win_rate': 0, 'sharpe_ratio': None, 'total_trades': 0
             })
 
-        # Get recent closed positions
         conn = store.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -244,13 +310,11 @@ def create_app(store=None, state=None, config: dict = None):
         conn.close()
 
         trades = []
-        balance_history = []
         win_count = 0
         total = len(rows)
 
-        # Compute win streak from most recent trades
         streak = 0
-        streak_dir = 0  # 1 = wins, -1 = losses
+        streak_dir = 0
         for row in rows:
             pnl = row['pnl'] or 0
             trades.append({
@@ -264,7 +328,6 @@ def create_app(store=None, state=None, config: dict = None):
             if pnl > 0:
                 win_count += 1
 
-        # Calculate streak from ordered list
         for t in trades:
             if t['pnl'] > 0:
                 if streak_dir >= 0:
@@ -281,7 +344,8 @@ def create_app(store=None, state=None, config: dict = None):
             else:
                 break
 
-        # Balance history (cumulative from trades, reversed to chronological)
+        # Balance history
+        balance_history = []
         running = 0
         for t in reversed(trades):
             running += t['pnl']
@@ -308,6 +372,10 @@ def create_app(store=None, state=None, config: dict = None):
                 if std_r > 0:
                     sharpe = round(float(mean_r / std_r), 2)
 
+        # Best/worst trade
+        best_trade = max((t['pnl'] for t in trades), default=0) if trades else 0
+        worst_trade = min((t['pnl'] for t in trades), default=0) if trades else 0
+
         return jsonify({
             'trades': trades[:20],
             'balance_history': balance_history,
@@ -315,9 +383,346 @@ def create_app(store=None, state=None, config: dict = None):
             'win_rate': round(win_rate, 1),
             'sharpe_ratio': sharpe,
             'total_trades': total,
+            'best_trade': round(best_trade, 2),
+            'worst_trade': round(worst_trade, 2),
         })
 
-    # --- Language API ----------------------------------------------------------
+    # ── Weekly Reports ─────────────────────────────────────────────────
+
+    @app.route("/api/weekly-reports")
+    @login_required
+    def api_weekly_reports():
+        wr = app.config.get('weekly_report')
+        if not wr:
+            return jsonify([])
+        return jsonify(wr.get_recent_reports(limit=4))
+
+    @app.route("/api/weekly-reports/<week>")
+    @login_required
+    def api_weekly_report_detail(week):
+        report_dir = PROJECT_ROOT / 'reports' / 'weekly'
+        week_safe = week.replace('-', '_')
+        json_path = report_dir / f"week_{week_safe}.json"
+        if json_path.exists():
+            with open(json_path, 'r', encoding='utf-8') as f:
+                return jsonify(json.load(f))
+        return jsonify({"error": "Report not found"}), 404
+
+    @app.route("/api/send-weekly-report", methods=["POST"])
+    @login_required
+    def api_send_weekly_report():
+        wr = app.config.get('weekly_report')
+        notifier = app.config.get('notifier')
+        if not wr:
+            return jsonify({"success": False, "error": "Weekly report not initialized"}), 500
+        result = wr.force_send(notifier)
+        if result:
+            return jsonify({"success": True, "report": result})
+        return jsonify({"success": False, "error": "No trades found this week"}), 404
+
+    # ── Settings APIs ──────────────────────────────────────────────────
+
+    @app.route("/api/settings", methods=["GET"])
+    @login_required
+    def api_settings_get():
+        import yaml
+        env = _read_env()
+        cfg = _load_config()
+
+        def mask(key_val):
+            if not key_val or key_val in ('', 'your_api_key_here', 'your_api_secret_here'):
+                return ''
+            if len(key_val) > 8:
+                return key_val[:4] + '...' + key_val[-4:]
+            return '****'
+
+        notif = cfg.get('notifications', {})
+
+        return jsonify({
+            'exchange': cfg.get('primary_exchange', 'bybit'),
+            'mode': env.get('TRADING_MODE', 'paper'),
+            'live_config': cfg.get('live', False),
+            'live_ok_file': LIVE_OK_PATH.exists(),
+            'live_env': env.get('TRADING_MODE', 'paper').lower() == 'live',
+            'all_gates_pass': (
+                env.get('TRADING_MODE', 'paper').lower() == 'live'
+                and LIVE_OK_PATH.exists()
+                and cfg.get('live', False) is True
+            ),
+            'bybit_key': mask(env.get('BYBIT_API_KEY', '')),
+            'bybit_secret_set': bool(env.get('BYBIT_API_SECRET', '')),
+            'mexc_key': mask(env.get('MEXC_API_KEY', '')),
+            'mexc_secret_set': bool(env.get('MEXC_API_SECRET', '')),
+            'binance_key': mask(env.get('BINANCE_API_KEY', '')),
+            'binance_secret_set': bool(
+                env.get('BINANCE_API_SECRET', '')
+                and env.get('BINANCE_API_SECRET', '') != 'your_api_secret_here'
+            ),
+            # Risk settings
+            'risk_per_trade_percent': cfg.get('risk_per_trade_percent', 3),
+            'daily_loss_limit_percent': cfg.get('daily_loss_limit_percent', 2),
+            'min_score': cfg.get('min_score', 65),
+            # Bot toggles
+            'allow_short': cfg.get('allow_short', True),
+            'trading_hours_enabled': cfg.get('trading_hours', {}).get('enabled', True),
+            'conservative_mode_enabled': cfg.get('conservative_mode', {}).get('enabled', True),
+            # Trade control
+            'max_open_positions': cfg.get('max_open_positions', 3),
+            'scan_top_n': cfg.get('scan_top_n', 20),
+            'scan_interval_minutes': cfg.get('scan_interval_minutes', 10),
+            # Notifications
+            'notifications': notif,
+        })
+
+    @app.route("/api/settings/exchange", methods=["POST"])
+    @login_required
+    def api_settings_exchange():
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        exchange = data.get('exchange', '').lower()
+        api_key = data.get('api_key', '').strip()
+        api_secret = data.get('api_secret', '').strip()
+
+        if exchange not in ('bybit', 'binance', 'mexc'):
+            return jsonify({"ok": False, "error": "Exchange must be bybit, binance, or mexc"}), 400
+
+        env = _read_env()
+        prefix = exchange.upper()
+        if api_key:
+            env[f'{prefix}_API_KEY'] = api_key
+            os.environ[f'{prefix}_API_KEY'] = api_key
+        if api_secret:
+            env[f'{prefix}_API_SECRET'] = api_secret
+            os.environ[f'{prefix}_API_SECRET'] = api_secret
+
+        _write_env(env)
+
+        cfg = _load_config()
+        cfg['primary_exchange'] = exchange
+        _save_config(cfg)
+
+        return jsonify({"ok": True, "exchange": exchange})
+
+    @app.route("/api/settings/bot", methods=["POST"])
+    @login_required
+    def api_settings_bot():
+        """Toggle bot settings: allow_short, trading_hours, conservative_mode, live."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        cfg = _load_config()
+
+        if 'allow_short' in data:
+            cfg['allow_short'] = bool(data['allow_short'])
+        if 'trading_hours_enabled' in data:
+            if 'trading_hours' not in cfg:
+                cfg['trading_hours'] = {}
+            cfg['trading_hours']['enabled'] = bool(data['trading_hours_enabled'])
+        if 'conservative_mode_enabled' in data:
+            if 'conservative_mode' not in cfg:
+                cfg['conservative_mode'] = {}
+            cfg['conservative_mode']['enabled'] = bool(data['conservative_mode_enabled'])
+        if 'live' in data:
+            cfg['live'] = bool(data['live'])
+            env = _read_env()
+            mode = 'live' if data['live'] else 'paper'
+            env['TRADING_MODE'] = mode
+            _write_env(env)
+            os.environ['TRADING_MODE'] = mode
+            if data['live']:
+                LIVE_OK_PATH.write_text("Enabled from dashboard\n", encoding="utf-8")
+            elif LIVE_OK_PATH.exists():
+                LIVE_OK_PATH.unlink()
+
+        _save_config(cfg)
+        return jsonify({"ok": True, "applied": data})
+
+    @app.route("/api/settings/risk", methods=["POST"])
+    @login_required
+    def api_settings_risk():
+        """Update risk management settings."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        cfg = _load_config()
+
+        if 'risk_per_trade_percent' in data:
+            val = float(data['risk_per_trade_percent'])
+            cfg['risk_per_trade_percent'] = max(0.5, min(val, 5.0))
+        if 'daily_loss_limit_percent' in data:
+            val = float(data['daily_loss_limit_percent'])
+            cfg['daily_loss_limit_percent'] = max(0.5, min(val, 10.0))
+        if 'min_score' in data:
+            val = int(data['min_score'])
+            cfg['min_score'] = max(50, min(val, 95))
+
+        _save_config(cfg)
+        return jsonify({"ok": True, "applied": {
+            'risk_per_trade_percent': cfg.get('risk_per_trade_percent'),
+            'daily_loss_limit_percent': cfg.get('daily_loss_limit_percent'),
+            'min_score': cfg.get('min_score'),
+        }})
+
+    @app.route("/api/settings/notifications", methods=["POST"])
+    @login_required
+    def api_settings_notifications():
+        """Update notification platform settings."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        cfg = _load_config()
+        if 'notifications' not in cfg:
+            cfg['notifications'] = {}
+
+        notif = cfg['notifications']
+
+        # Discord
+        if 'discord' in data:
+            d = data['discord']
+            if 'discord' not in notif:
+                notif['discord'] = {'enabled': False, 'channels': {}}
+            if 'enabled' in d:
+                notif['discord']['enabled'] = bool(d['enabled'])
+            if 'channels' in d:
+                if 'channels' not in notif['discord']:
+                    notif['discord']['channels'] = {}
+                for ch, url in d['channels'].items():
+                    notif['discord']['channels'][ch] = url
+
+        # Telegram
+        if 'telegram' in data:
+            t = data['telegram']
+            if 'telegram' not in notif:
+                notif['telegram'] = {'enabled': False, 'bot_token': '', 'chat_id': ''}
+            if 'enabled' in t:
+                notif['telegram']['enabled'] = bool(t['enabled'])
+            if 'bot_token' in t:
+                notif['telegram']['bot_token'] = t['bot_token']
+            if 'chat_id' in t:
+                notif['telegram']['chat_id'] = t['chat_id']
+
+        # Custom
+        if 'custom' in data:
+            c = data['custom']
+            if 'custom' not in notif:
+                notif['custom'] = {'enabled': False, 'webhook_url': '', 'format': 'discord'}
+            if 'enabled' in c:
+                notif['custom']['enabled'] = bool(c['enabled'])
+            if 'webhook_url' in c:
+                notif['custom']['webhook_url'] = c['webhook_url']
+            if 'format' in c:
+                notif['custom']['format'] = c['format']
+
+        _save_config(cfg)
+
+        # Reload notifier config
+        notifier = app.config.get('notifier')
+        if notifier:
+            notifier.config = cfg
+            notifier.notif_config = cfg.get('notifications', {})
+
+        return jsonify({"ok": True})
+
+    @app.route("/api/settings/positions", methods=["POST"])
+    @login_required
+    def api_settings_positions():
+        """Update trade control settings: max positions, scan top N, scan interval."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        cfg = _load_config()
+
+        if 'max_open_positions' in data:
+            val = int(data['max_open_positions'])
+            cfg['max_open_positions'] = max(1, min(val, 5))
+        if 'scan_top_n' in data:
+            val = int(data['scan_top_n'])
+            cfg['scan_top_n'] = max(10, min(val, 50))
+        if 'scan_interval_minutes' in data:
+            val = int(data['scan_interval_minutes'])
+            cfg['scan_interval_minutes'] = max(5, min(val, 60))
+
+        _save_config(cfg)
+
+        return jsonify({"ok": True, "applied": {
+            'max_open_positions': cfg.get('max_open_positions'),
+            'scan_top_n': cfg.get('scan_top_n'),
+            'scan_interval_minutes': cfg.get('scan_interval_minutes'),
+        }})
+
+    # ── Actions ────────────────────────────────────────────────────────
+
+    @app.route("/api/test-connection", methods=["GET", "POST"])
+    @login_required
+    def api_test_connection():
+        """Test exchange API connection."""
+        import ccxt
+        data = request.get_json() if request.method == 'POST' else {}
+        exchange = (data or {}).get('exchange', (config or {}).get('primary_exchange', 'bybit'))
+
+        env = _read_env()
+
+        try:
+            if exchange == 'bybit':
+                ex = ccxt.bybit({
+                    'apiKey': env.get('BYBIT_API_KEY', ''),
+                    'secret': env.get('BYBIT_API_SECRET', ''),
+                    'enableRateLimit': True,
+                })
+                bal = ex.fetch_balance()
+                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
+                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Bybit"})
+            elif exchange == 'mexc':
+                ex = ccxt.mexc({
+                    'apiKey': env.get('MEXC_API_KEY', ''),
+                    'secret': env.get('MEXC_API_SECRET', ''),
+                    'enableRateLimit': True,
+                })
+                bal = ex.fetch_balance()
+                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
+                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "MEXC"})
+            elif exchange == 'binance':
+                ex = ccxt.binance({
+                    'apiKey': env.get('BINANCE_API_KEY', ''),
+                    'secret': env.get('BINANCE_API_SECRET', ''),
+                    'enableRateLimit': True,
+                })
+                bal = ex.fetch_balance()
+                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
+                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Binance"})
+            else:
+                return jsonify({"ok": False, "error": "Unknown exchange"}), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    @app.route("/api/test-notification", methods=["POST"])
+    @login_required
+    def api_test_notification():
+        """Test a notification platform."""
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data"}), 400
+
+        platform = data.get('platform', '')
+        channel = data.get('channel', 'general')
+
+        notifier = app.config.get('notifier')
+        if not notifier:
+            # Create a temporary notifier with current config
+            from core.notifier import Notifier
+            cfg = _load_config()
+            notifier = Notifier(cfg)
+
+        success, message = notifier.test_platform(platform, channel)
+        return jsonify({"success": success, "message": message})
+
+    # ── Language API ───────────────────────────────────────────────────
 
     @app.route("/api/lang")
     @login_required
@@ -334,7 +739,7 @@ def create_app(store=None, state=None, config: dict = None):
             return jsonify({"ok": True, "lang": lang_code})
         return jsonify({"ok": False, "error": "Unsupported language"}), 400
 
-    # --- DB endpoints ----------------------------------------------------------
+    # ── DB endpoints ──────────────────────────────────────────────────
 
     @app.route("/api/positions/db")
     @login_required
@@ -376,184 +781,36 @@ def create_app(store=None, state=None, config: dict = None):
             for r in results
         ])
 
-    # --- Settings API (Exchange + Live Mode) -------------------------------------
+    # ── Stats API ─────────────────────────────────────────────────────
 
-    CONFIG_PATH = PROJECT_ROOT / "config.yaml"
-    LIVE_OK_PATH = PROJECT_ROOT / "LIVE_OK.txt"
-
-    @app.route("/api/settings", methods=["GET"])
+    @app.route("/api/stats")
     @login_required
-    def api_settings_get():
-        """Return current settings for the settings panel."""
-        import yaml
-        env = _read_env()
+    def api_stats():
+        """Overall bot statistics."""
+        if store is None:
+            return jsonify({})
+        conn = store.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(pnl) as total_pnl
+            FROM positions WHERE status = 'CLOSED'
+        """)
+        row = cursor.fetchone()
+        conn.close()
 
-        # Read config.yaml
-        cfg = {}
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-
-        # Mask API keys for display
-        def mask(key_val):
-            if not key_val or key_val in ('', 'your_api_key_here', 'your_api_secret_here'):
-                return ''
-            if len(key_val) > 8:
-                return key_val[:4] + '...' + key_val[-4:]
-            return '****'
+        total = row['total'] or 0
+        wins = row['wins'] or 0
+        total_pnl = row['total_pnl'] or 0
+        win_rate = (wins / total * 100) if total > 0 else 0
 
         return jsonify({
-            'exchange': cfg.get('primary_exchange', 'bybit'),
-            'mode': env.get('TRADING_MODE', 'paper'),
-            'live_config': cfg.get('live', False),
-            'live_ok_file': LIVE_OK_PATH.exists(),
-            'live_env': env.get('TRADING_MODE', 'paper').lower() == 'live',
-            'all_gates_pass': (
-                env.get('TRADING_MODE', 'paper').lower() == 'live'
-                and LIVE_OK_PATH.exists()
-                and cfg.get('live', False) is True
-            ),
-            'bybit_key': mask(env.get('BYBIT_API_KEY', '')),
-            'bybit_secret_set': bool(env.get('BYBIT_API_SECRET', '')),
-            'binance_key': mask(env.get('BINANCE_API_KEY', '')),
-            'binance_secret_set': bool(
-                env.get('BINANCE_API_SECRET', '')
-                and env.get('BINANCE_API_SECRET', '') != 'your_api_secret_here'
-            ),
+            'total_trades': total,
+            'wins': wins,
+            'losses': total - wins,
+            'win_rate': round(win_rate, 1),
+            'total_pnl': round(total_pnl, 2),
         })
-
-    @app.route("/api/settings/exchange", methods=["POST"])
-    @login_required
-    def api_settings_exchange():
-        """Save exchange API keys and set primary exchange."""
-        import yaml
-        data = request.get_json()
-        if not data:
-            return jsonify({"ok": False, "error": "No data"}), 400
-
-        exchange = data.get('exchange', '').lower()
-        api_key = data.get('api_key', '').strip()
-        api_secret = data.get('api_secret', '').strip()
-
-        if exchange not in ('bybit', 'binance'):
-            return jsonify({"ok": False, "error": "Exchange must be bybit or binance"}), 400
-
-        # Save API keys to .env
-        env = _read_env()
-        if exchange == 'bybit':
-            if api_key:
-                env['BYBIT_API_KEY'] = api_key
-                os.environ['BYBIT_API_KEY'] = api_key
-            if api_secret:
-                env['BYBIT_API_SECRET'] = api_secret
-                os.environ['BYBIT_API_SECRET'] = api_secret
-        elif exchange == 'binance':
-            if api_key:
-                env['BINANCE_API_KEY'] = api_key
-                os.environ['BINANCE_API_KEY'] = api_key
-            if api_secret:
-                env['BINANCE_API_SECRET'] = api_secret
-                os.environ['BINANCE_API_SECRET'] = api_secret
-
-        _write_env(env)
-
-        # Update config.yaml primary_exchange
-        cfg = {}
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-        cfg['primary_exchange'] = exchange
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
-
-        return jsonify({"ok": True, "exchange": exchange})
-
-    @app.route("/api/settings/mode", methods=["POST"])
-    @login_required
-    def api_settings_mode():
-        """Toggle between paper and live mode. Sets all 3 gates."""
-        import yaml
-        data = request.get_json()
-        if not data:
-            return jsonify({"ok": False, "error": "No data"}), 400
-
-        mode = data.get('mode', 'paper').lower()
-        if mode not in ('paper', 'live'):
-            return jsonify({"ok": False, "error": "Mode must be paper or live"}), 400
-
-        # Gate 1: .env TRADING_MODE
-        env = _read_env()
-        env['TRADING_MODE'] = mode
-        _write_env(env)
-        os.environ['TRADING_MODE'] = mode
-
-        # Gate 2: LIVE_OK.txt
-        if mode == 'live':
-            LIVE_OK_PATH.write_text("Enabled from dashboard\n", encoding="utf-8")
-        else:
-            if LIVE_OK_PATH.exists():
-                LIVE_OK_PATH.unlink()
-
-        # Gate 3: config.yaml live flag
-        cfg = {}
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-        cfg['live'] = (mode == 'live')
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
-
-        # Check if API keys are set for the selected exchange
-        exchange = cfg.get('primary_exchange', 'bybit')
-        warning = None
-        if mode == 'live':
-            if exchange == 'bybit':
-                if not env.get('BYBIT_API_KEY') or not env.get('BYBIT_API_SECRET'):
-                    warning = "Bybit API keys not set! Add them in Exchange Setup first."
-            elif exchange == 'binance':
-                bk = env.get('BINANCE_API_KEY', '')
-                if not bk or bk == 'your_api_key_here':
-                    warning = "Binance API keys not set! Add them in Exchange Setup first."
-
-        return jsonify({
-            "ok": True,
-            "mode": mode,
-            "warning": warning,
-            "note": "Restart the bot for changes to take effect."
-        })
-
-    @app.route("/api/settings/test-connection", methods=["POST"])
-    @login_required
-    def api_settings_test():
-        """Test exchange API connection."""
-        import ccxt
-        data = request.get_json() or {}
-        exchange = data.get('exchange', 'bybit')
-
-        env = _read_env()
-
-        try:
-            if exchange == 'bybit':
-                ex = ccxt.bybit({
-                    'apiKey': env.get('BYBIT_API_KEY', ''),
-                    'secret': env.get('BYBIT_API_SECRET', ''),
-                    'enableRateLimit': True,
-                })
-                bal = ex.fetch_balance()
-                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
-                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Bybit"})
-            elif exchange == 'binance':
-                ex = ccxt.binance({
-                    'apiKey': env.get('BINANCE_API_KEY', ''),
-                    'secret': env.get('BINANCE_API_SECRET', ''),
-                    'enableRateLimit': True,
-                })
-                bal = ex.fetch_balance()
-                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
-                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Binance"})
-            else:
-                return jsonify({"ok": False, "error": "Unknown exchange"}), 400
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
 
     return app
