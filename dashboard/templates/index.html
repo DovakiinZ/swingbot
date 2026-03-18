@@ -377,6 +377,139 @@
   }
   .pulse { animation: pulse 2s ease-in-out infinite; }
 
+  /* --- Settings Tab --- */
+  .setting-group {
+    margin-bottom: 20px;
+  }
+  .setting-group-title {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .setting-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .setting-input {
+    width: 100%;
+    padding: 12px 14px;
+    background: #0d0d0d;
+    border: 1px solid #333;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 12px;
+    font-family: monospace;
+  }
+  .setting-input:focus {
+    outline: none;
+    border-color: var(--green);
+  }
+  .setting-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: opacity 0.2s;
+  }
+  .setting-btn:hover { opacity: 0.85; }
+  .setting-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .setting-btn.primary { background: var(--green); color: #000; }
+  .setting-btn.danger { background: var(--red); color: #fff; }
+  .setting-btn.secondary { background: #333; color: #fff; }
+
+  .exchange-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .exchange-opt {
+    flex: 1;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .exchange-opt.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,255,136,0.08);
+  }
+
+  .mode-toggle {
+    display: flex;
+    gap: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #333;
+    margin-bottom: 16px;
+  }
+  .mode-opt {
+    flex: 1;
+    padding: 14px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    letter-spacing: 1px;
+  }
+  .mode-opt.paper-opt {
+    background: rgba(255,255,255,0.05);
+    color: var(--text-dim);
+  }
+  .mode-opt.paper-opt.active {
+    background: rgba(0,255,136,0.15);
+    color: var(--green);
+  }
+  .mode-opt.live-opt {
+    background: rgba(255,255,255,0.05);
+    color: var(--text-dim);
+  }
+  .mode-opt.live-opt.active {
+    background: rgba(255,71,87,0.15);
+    color: var(--red);
+  }
+
+  .status-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .status-msg.success { display: block; background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+  .status-msg.error { display: block; background: rgba(255,71,87,0.1); color: var(--red); border: 1px solid rgba(255,71,87,0.2); }
+  .status-msg.warning { display: block; background: rgba(255,215,0,0.1); color: var(--gold); border: 1px solid rgba(255,215,0,0.2); }
+
+  .gate-list {
+    margin: 12px 0;
+  }
+  .gate-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+  .gate-icon { font-size: 16px; }
+
   /* --- Scrollbar --- */
   .tab-content::-webkit-scrollbar { width: 4px; }
   .tab-content::-webkit-scrollbar-track { background: transparent; }
@@ -456,6 +589,65 @@
     </div>
   </div>
 
+  <!-- ==================== SETTINGS TAB ==================== -->
+  <div class="tab-panel" id="panelSettings">
+
+    <!-- Trading Mode -->
+    <div class="setting-group">
+      <div class="setting-group-title">Trading Mode</div>
+      <div class="mode-toggle">
+        <button class="mode-opt paper-opt active" id="modePaper" onclick="setMode('paper')">PAPER</button>
+        <button class="mode-opt live-opt" id="modeLive" onclick="setMode('live')">LIVE</button>
+      </div>
+      <div id="modeStatus" class="status-msg"></div>
+      <div id="gateStatus" class="card" style="display:none; padding:14px;">
+        <div style="font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Live Mode Gates</div>
+        <div class="gate-list">
+          <div class="gate-item"><span class="gate-icon" id="gate1Icon">--</span> .env TRADING_MODE=live</div>
+          <div class="gate-item"><span class="gate-icon" id="gate2Icon">--</span> LIVE_OK.txt exists</div>
+          <div class="gate-item"><span class="gate-icon" id="gate3Icon">--</span> config.yaml live=true</div>
+        </div>
+        <div style="font-size:11px; color:var(--gold); margin-top:8px;">Restart the bot after changing mode.</div>
+      </div>
+    </div>
+
+    <!-- Exchange Setup -->
+    <div class="setting-group">
+      <div class="setting-group-title">Exchange Setup</div>
+      <div class="exchange-toggle">
+        <button class="exchange-opt active" id="exBybit" onclick="selectExchange('bybit')">Bybit</button>
+        <button class="exchange-opt" id="exBinance" onclick="selectExchange('binance')">Binance</button>
+      </div>
+
+      <label class="setting-label">API Key</label>
+      <input type="text" class="setting-input" id="apiKeyInput" placeholder="Paste your API key" autocomplete="off">
+
+      <label class="setting-label">API Secret</label>
+      <input type="password" class="setting-input" id="apiSecretInput" placeholder="Paste your API secret" autocomplete="off">
+
+      <button class="setting-btn primary" id="saveKeysBtn" onclick="saveExchangeKeys()">Save Keys</button>
+      <button class="setting-btn secondary" id="testConnBtn" onclick="testConnection()">Test Connection</button>
+
+      <div id="exchangeStatus" class="status-msg"></div>
+
+      <div class="card" style="margin-top:12px; padding:14px;">
+        <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">Current Keys</div>
+        <div style="font-size:13px;" id="currentKeysInfo">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="card" style="padding:14px; margin-top:8px;">
+      <div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;">How to get API Keys</div>
+      <div style="font-size:12px; line-height:1.6; color:var(--text);">
+        <strong>Bybit:</strong> bybit.com &rarr; Account &rarr; API Management &rarr; Create New Key<br>
+        <strong>Binance:</strong> binance.com &rarr; Account &rarr; API Management &rarr; Create API<br><br>
+        Permissions: <strong>Read + Trade ONLY</strong><br>
+        <span style="color:var(--red); font-weight:700;">NEVER enable Withdrawal</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== HISTORY TAB ==================== -->
   <div class="tab-panel" id="panelHistory">
     <div class="section-title" style="margin-top:8px;">Balance Curve</div>
@@ -518,6 +710,12 @@
     </svg>
     HISTORY
   </button>
+  <button class="tab-btn" data-tab="panelSettings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+    </svg>
+    SETTINGS
+  </button>
 </nav>
 
 <script>
@@ -557,6 +755,7 @@
 
       if (target === 'panelPositions') fetchPositions();
       if (target === 'panelHistory') fetchHistory();
+      if (target === 'panelSettings') fetchSettings();
     });
   });
 
@@ -956,6 +1155,150 @@
         }
       }
     });
+  }
+
+  // ============================
+  // SETTINGS TAB
+  // ============================
+  var selectedExchange = 'bybit';
+
+  window.selectExchange = function(ex) {
+    selectedExchange = ex;
+    $('#exBybit').classList.toggle('active', ex === 'bybit');
+    $('#exBinance').classList.toggle('active', ex === 'binance');
+    $('#apiKeyInput').value = '';
+    $('#apiSecretInput').value = '';
+    $('#apiKeyInput').placeholder = 'Paste your ' + ex.charAt(0).toUpperCase() + ex.slice(1) + ' API key';
+    $('#apiSecretInput').placeholder = 'Paste your ' + ex.charAt(0).toUpperCase() + ex.slice(1) + ' API secret';
+  };
+
+  window.saveExchangeKeys = function() {
+    var btn = $('#saveKeysBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    var statusEl = $('#exchangeStatus');
+
+    fetch('/api/settings/exchange', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        exchange: selectedExchange,
+        api_key: $('#apiKeyInput').value,
+        api_secret: $('#apiSecretInput').value
+      })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Save Keys';
+      if (d.ok) {
+        statusEl.className = 'status-msg success';
+        statusEl.textContent = 'Keys saved! Primary exchange set to ' + d.exchange.toUpperCase();
+        $('#apiKeyInput').value = '';
+        $('#apiSecretInput').value = '';
+        fetchSettings();
+      } else {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = d.error || 'Failed to save';
+      }
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Save Keys';
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Connection error';
+    });
+  };
+
+  window.testConnection = function() {
+    var btn = $('#testConnBtn');
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    var statusEl = $('#exchangeStatus');
+
+    fetch('/api/settings/test-connection', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ exchange: selectedExchange })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+      if (d.ok) {
+        statusEl.className = 'status-msg success';
+        statusEl.textContent = d.exchange + ' connected! Balance: $' + d.balance + ' USDT';
+      } else {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
+      }
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Connection error';
+    });
+  };
+
+  window.setMode = function(mode) {
+    if (mode === 'live' && !confirm('Switch to LIVE trading with REAL money?\n\nMake sure your API keys are set up first.\n\nYou will need to RESTART the bot after this change.')) {
+      return;
+    }
+
+    var statusEl = $('#modeStatus');
+
+    fetch('/api/settings/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mode: mode })
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.ok) {
+        if (d.warning) {
+          statusEl.className = 'status-msg warning';
+          statusEl.textContent = d.warning + ' ' + (d.note || '');
+        } else {
+          statusEl.className = 'status-msg success';
+          statusEl.textContent = 'Mode set to ' + mode.toUpperCase() + '. ' + (d.note || '');
+        }
+        fetchSettings();
+      } else {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = d.error || 'Failed';
+      }
+    }).catch(function(e) {
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = 'Connection error';
+    });
+  };
+
+  function fetchSettings() {
+    apiFetch('/api/settings').then(function(d) {
+      // Mode toggle
+      var isPaper = d.mode !== 'live';
+      $('#modePaper').classList.toggle('active', isPaper);
+      $('#modeLive').classList.toggle('active', !isPaper);
+
+      // Exchange toggle
+      selectedExchange = d.exchange || 'bybit';
+      $('#exBybit').classList.toggle('active', selectedExchange === 'bybit');
+      $('#exBinance').classList.toggle('active', selectedExchange === 'binance');
+
+      // Gates
+      var gateEl = $('#gateStatus');
+      gateEl.style.display = 'block';
+      $('#gate1Icon').textContent = d.live_env ? '\u2705' : '\u274C';
+      $('#gate2Icon').textContent = d.live_ok_file ? '\u2705' : '\u274C';
+      $('#gate3Icon').textContent = d.live_config ? '\u2705' : '\u274C';
+
+      // Current keys
+      var keysHtml = '';
+      if (d.bybit_key) {
+        keysHtml += '<div>Bybit: <span style="color:var(--green); font-family:monospace;">' + escHtml(d.bybit_key) + '</span></div>';
+      }
+      if (d.binance_key) {
+        keysHtml += '<div>Binance: <span style="color:var(--green); font-family:monospace;">' + escHtml(d.binance_key) + '</span></div>';
+      }
+      if (!keysHtml) {
+        keysHtml = '<span style="color:var(--text-dim);">No API keys configured</span>';
+      }
+      keysHtml += '<div style="margin-top:6px; font-size:11px; color:var(--text-dim);">Primary: ' + (d.exchange || 'bybit').toUpperCase() + '</div>';
+      $('#currentKeysInfo').innerHTML = keysHtml;
+    }).catch(function() {});
   }
 
   // ============================

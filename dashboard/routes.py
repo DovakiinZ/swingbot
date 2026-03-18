@@ -376,4 +376,184 @@ def create_app(store=None, state=None, config: dict = None):
             for r in results
         ])
 
+    # --- Settings API (Exchange + Live Mode) -------------------------------------
+
+    CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+    LIVE_OK_PATH = PROJECT_ROOT / "LIVE_OK.txt"
+
+    @app.route("/api/settings", methods=["GET"])
+    @login_required
+    def api_settings_get():
+        """Return current settings for the settings panel."""
+        import yaml
+        env = _read_env()
+
+        # Read config.yaml
+        cfg = {}
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+
+        # Mask API keys for display
+        def mask(key_val):
+            if not key_val or key_val in ('', 'your_api_key_here', 'your_api_secret_here'):
+                return ''
+            if len(key_val) > 8:
+                return key_val[:4] + '...' + key_val[-4:]
+            return '****'
+
+        return jsonify({
+            'exchange': cfg.get('primary_exchange', 'bybit'),
+            'mode': env.get('TRADING_MODE', 'paper'),
+            'live_config': cfg.get('live', False),
+            'live_ok_file': LIVE_OK_PATH.exists(),
+            'live_env': env.get('TRADING_MODE', 'paper').lower() == 'live',
+            'all_gates_pass': (
+                env.get('TRADING_MODE', 'paper').lower() == 'live'
+                and LIVE_OK_PATH.exists()
+                and cfg.get('live', False) is True
+            ),
+            'bybit_key': mask(env.get('BYBIT_API_KEY', '')),
+            'bybit_secret_set': bool(env.get('BYBIT_API_SECRET', '')),
+            'binance_key': mask(env.get('BINANCE_API_KEY', '')),
+            'binance_secret_set': bool(
+                env.get('BINANCE_API_SECRET', '')
+                and env.get('BINANCE_API_SECRET', '') != 'your_api_secret_here'
+            ),
+        })
+
+    @app.route("/api/settings/exchange", methods=["POST"])
+    @login_required
+    def api_settings_exchange():
+        """Save exchange API keys and set primary exchange."""
+        import yaml
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        exchange = data.get('exchange', '').lower()
+        api_key = data.get('api_key', '').strip()
+        api_secret = data.get('api_secret', '').strip()
+
+        if exchange not in ('bybit', 'binance'):
+            return jsonify({"ok": False, "error": "Exchange must be bybit or binance"}), 400
+
+        # Save API keys to .env
+        env = _read_env()
+        if exchange == 'bybit':
+            if api_key:
+                env['BYBIT_API_KEY'] = api_key
+                os.environ['BYBIT_API_KEY'] = api_key
+            if api_secret:
+                env['BYBIT_API_SECRET'] = api_secret
+                os.environ['BYBIT_API_SECRET'] = api_secret
+        elif exchange == 'binance':
+            if api_key:
+                env['BINANCE_API_KEY'] = api_key
+                os.environ['BINANCE_API_KEY'] = api_key
+            if api_secret:
+                env['BINANCE_API_SECRET'] = api_secret
+                os.environ['BINANCE_API_SECRET'] = api_secret
+
+        _write_env(env)
+
+        # Update config.yaml primary_exchange
+        cfg = {}
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        cfg['primary_exchange'] = exchange
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+        return jsonify({"ok": True, "exchange": exchange})
+
+    @app.route("/api/settings/mode", methods=["POST"])
+    @login_required
+    def api_settings_mode():
+        """Toggle between paper and live mode. Sets all 3 gates."""
+        import yaml
+        data = request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "No data"}), 400
+
+        mode = data.get('mode', 'paper').lower()
+        if mode not in ('paper', 'live'):
+            return jsonify({"ok": False, "error": "Mode must be paper or live"}), 400
+
+        # Gate 1: .env TRADING_MODE
+        env = _read_env()
+        env['TRADING_MODE'] = mode
+        _write_env(env)
+        os.environ['TRADING_MODE'] = mode
+
+        # Gate 2: LIVE_OK.txt
+        if mode == 'live':
+            LIVE_OK_PATH.write_text("Enabled from dashboard\n", encoding="utf-8")
+        else:
+            if LIVE_OK_PATH.exists():
+                LIVE_OK_PATH.unlink()
+
+        # Gate 3: config.yaml live flag
+        cfg = {}
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        cfg['live'] = (mode == 'live')
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+
+        # Check if API keys are set for the selected exchange
+        exchange = cfg.get('primary_exchange', 'bybit')
+        warning = None
+        if mode == 'live':
+            if exchange == 'bybit':
+                if not env.get('BYBIT_API_KEY') or not env.get('BYBIT_API_SECRET'):
+                    warning = "Bybit API keys not set! Add them in Exchange Setup first."
+            elif exchange == 'binance':
+                bk = env.get('BINANCE_API_KEY', '')
+                if not bk or bk == 'your_api_key_here':
+                    warning = "Binance API keys not set! Add them in Exchange Setup first."
+
+        return jsonify({
+            "ok": True,
+            "mode": mode,
+            "warning": warning,
+            "note": "Restart the bot for changes to take effect."
+        })
+
+    @app.route("/api/settings/test-connection", methods=["POST"])
+    @login_required
+    def api_settings_test():
+        """Test exchange API connection."""
+        import ccxt
+        data = request.get_json() or {}
+        exchange = data.get('exchange', 'bybit')
+
+        env = _read_env()
+
+        try:
+            if exchange == 'bybit':
+                ex = ccxt.bybit({
+                    'apiKey': env.get('BYBIT_API_KEY', ''),
+                    'secret': env.get('BYBIT_API_SECRET', ''),
+                    'enableRateLimit': True,
+                })
+                bal = ex.fetch_balance()
+                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
+                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Bybit"})
+            elif exchange == 'binance':
+                ex = ccxt.binance({
+                    'apiKey': env.get('BINANCE_API_KEY', ''),
+                    'secret': env.get('BINANCE_API_SECRET', ''),
+                    'enableRateLimit': True,
+                })
+                bal = ex.fetch_balance()
+                usdt = float(bal.get('USDT', {}).get('free', 0) or 0)
+                return jsonify({"ok": True, "balance": round(usdt, 2), "exchange": "Binance"})
+            else:
+                return jsonify({"ok": False, "error": "Unknown exchange"}), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
     return app

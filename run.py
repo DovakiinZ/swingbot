@@ -49,7 +49,7 @@ from ml.model import SwingbotModel
 
 # --- Config -------------------------------------------------------------------
 load_dotenv()
-with open("config.yaml", "r") as f:
+with open("config.yaml", "r", encoding="utf-8") as f:
     CONFIG = yaml.safe_load(f)
 
 from core.i18n import i18n

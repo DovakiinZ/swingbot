@@ -21,7 +21,7 @@ if __name__ == '__main__':
                         help='Show current model status')
     args = parser.parse_args()
 
-    with open('config.yaml') as f:
+    with open('config.yaml', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
     store = SQLiteStore(db_path=config['db_path'])

@@ -19,7 +19,7 @@ class SQLiteStore:
         self._init_db()
 
     def _init_db(self):
-        with open('storage/schema.sql', 'r') as f:
+        with open('storage/schema.sql', 'r', encoding='utf-8') as f:
             schema = f.read()
         conn = sqlite3.connect(self.db_path)
         conn.executescript(schema)

@@ -29,14 +29,15 @@ class SymbolSelector:
             candidates = []
 
             for symbol, data in tickers.items():
-                if not symbol.endswith('/USDT'):
+                # Support both spot (BTC/USDT) and linear (BTC/USDT:USDT) formats
+                if '/USDT' not in symbol:
                     continue
 
                 base = symbol.split('/')[0]
                 if any(x in base for x in ['UP', 'DOWN', 'BEAR', 'BULL']) or base in self.banned_coins:
                     continue
 
-                quote_vol = data.get('quoteVolume', 0)
+                quote_vol = data.get('quoteVolume', 0) or 0
                 if quote_vol < min_volume_usdt:
                     continue
 
@@ -82,14 +83,15 @@ class SymbolSelector:
 
             candidates = []
             for symbol, data in tickers.items():
-                if not symbol.endswith('/USDT'):
+                # Support both spot (BTC/USDT) and linear (BTC/USDT:USDT) formats
+                if '/USDT' not in symbol:
                     continue
 
                 base = symbol.split('/')[0]
                 if any(x in base for x in ['UP', 'DOWN', 'BEAR', 'BULL']) or base in self.banned_coins:
                     continue
 
-                quote_vol = data.get('quoteVolume', 0)
+                quote_vol = data.get('quoteVolume', 0) or 0
                 if quote_vol < min_volume_usdt:
                     continue
 
