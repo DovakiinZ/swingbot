@@ -37,6 +37,7 @@ from risk.circuit_breakers import CircuitBreaker
 from execution.broker_paper import PaperBroker
 from execution.broker_binance import BinanceBroker
 from execution.broker_bybit import BybitBroker
+from execution.broker_mexc import MexcBroker
 from optimize.bandit import Bandit
 from reports.daily_report import DailyReport
 from optimize.param_sets import ARMS
@@ -244,6 +245,8 @@ def main():
             broker = BybitBroker(store, market, account_type=account_type)
         elif primary_exchange == 'binance':
             broker = BinanceBroker(store, market)
+        elif primary_exchange == 'mexc':
+            broker = MexcBroker(store, market)
         else:
             raise ValueError(f"Unknown exchange: {primary_exchange}")
     else:
