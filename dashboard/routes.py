@@ -544,8 +544,9 @@ def create_app(store=None, state=None, config: dict = None):
             cfg['conservative_mode']['enabled'] = bool(data['conservative_mode_enabled'])
         if 'live' in data:
             cfg['live'] = bool(data['live'])
-            env = _read_env()
             mode = 'live' if data['live'] else 'paper'
+            cfg['trading_mode'] = mode
+            env = _read_env()
             env['TRADING_MODE'] = mode
             _write_env(env)
             os.environ['TRADING_MODE'] = mode

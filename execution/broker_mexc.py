@@ -33,7 +33,10 @@ class MexcBroker(Broker):
         """Returns available USDT balance."""
         try:
             balance = self.exchange.fetch_balance()
-            return float(balance['USDT']['free'] or 0)
+            usdt = balance.get('USDT') or balance.get('free', {})
+            if isinstance(usdt, dict):
+                return float(usdt.get('free', 0) or 0)
+            return float(usdt or 0)
         except Exception as e:
             logger.error(f"[MEXC] Balance fetch failed: {e}")
             return 0.0
@@ -42,9 +45,12 @@ class MexcBroker(Broker):
         """Returns detailed USDT balance info."""
         try:
             balance = self.exchange.fetch_balance()
+            usdt = balance.get('USDT', {})
+            if not isinstance(usdt, dict):
+                usdt = {}
             return {
-                'USDT_free':  float(balance['USDT'].get('free', 0) or 0),
-                'USDT_total': float(balance['USDT'].get('total', 0) or 0),
+                'USDT_free':  float(usdt.get('free', 0) or 0),
+                'USDT_total': float(usdt.get('total', 0) or 0),
             }
         except Exception as e:
             logger.error(f"[MEXC] Detailed balance failed: {e}")

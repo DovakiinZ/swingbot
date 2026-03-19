@@ -217,9 +217,11 @@ def main():
     check_live_env  = (os.getenv("TRADING_MODE", "paper").lower() == "live")
     check_live_file = os.path.exists("LIVE_OK.txt")
     check_live_conf = CONFIG.get("live", False)
+    check_live_cfg_mode = (CONFIG.get("trading_mode", "paper").lower() == "live")
 
     is_live = False
-    if args.live:
+    # Go live if all three safety gates pass (with --live flag OR config trading_mode)
+    if args.live or check_live_cfg_mode:
         if check_live_env and check_live_file and check_live_conf:
             is_live = True
         else:
@@ -632,15 +634,6 @@ def main():
                 weekly_report.check_and_send(notifier)
                 return
 
-            # -- Trading hours filter ------------------------------------------
-            hours_ok, hours_reason = is_good_time_to_trade(CONFIG)
-            if not hours_ok:
-                logger.warning(f"[HOURS] {hours_reason}")
-                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
-                _log_status(status, time.time() - cycle_start, scan_interval_sec)
-                weekly_report.check_and_send(notifier)
-                return
-
             # -- Conservative mode check ---------------------------------------
             conservative, risk_mult, c_reason = conservative_mode.check(
                 recent_trades=store.get_last_n_trades(10),
@@ -652,12 +645,7 @@ def main():
             if conservative:
                 logger.warning(f"[CONSERVATIVE] {c_reason} → risk x{risk_mult}")
 
-            if not sentiment_ok:
-                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
-                _log_status(status, time.time() - cycle_start, scan_interval_sec)
-                return
-
-            # Get universe of symbols to scan
+            # Get universe of symbols to scan (always scan for dashboard display)
             if args.symbol:
                 scan_candidates = [args.symbol]
             else:
@@ -676,6 +664,7 @@ def main():
 
             # Score every candidate
             scored = []
+            all_scanned = []  # All results for dashboard display
             already_held = {p.symbol for p in open_positions}
 
             for sym in scan_candidates:
@@ -691,40 +680,60 @@ def main():
                     regime = RegimeDetector.detect(df.iloc[-1])
                     score, breakout_detected = scanner.score_symbol(df, regime)
 
+                    entry = {
+                        'symbol':  sym,
+                        'score':   score,
+                        'df':      df,
+                        'regime':  regime,
+                        'candles': candles,
+                        'price':   candles[-1].close,
+                        'breakout_detected': breakout_detected,
+                    }
+                    all_scanned.append(entry)
+
                     if score >= MIN_SCORE:
-                        scored.append({
-                            'symbol':  sym,
-                            'score':   score,
-                            'df':      df,
-                            'regime':  regime,
-                            'candles': candles,
-                            'price':   candles[-1].close,
-                            'breakout_detected': breakout_detected,
-                        })
+                        scored.append(entry)
                         logger.debug(f"  {sym}: score={score:.1f} breakout={breakout_detected}")
 
                 except Exception as e:
                     logger.error(f"Scan error for {sym}: {e}")
 
             scored.sort(key=lambda x: x['score'], reverse=True)
+            all_scanned.sort(key=lambda x: x['score'], reverse=True)
 
-            # Save scan results to dashboard state
+            # Save scan results to dashboard (show top results even if below MIN_SCORE)
+            display_results = scored if scored else all_scanned[:5]
+            dashboard_state['scan_results'] = [
+                {
+                    "symbol": s['symbol'],
+                    "score": s['score'],
+                    "price": s['price'],
+                    "signal": "BUY" if s['score'] >= MIN_SCORE else "--",
+                }
+                for s in display_results
+            ]
+
             if scored:
-                dashboard_state['scan_results'] = [
-                    {
-                        "symbol": s['symbol'],
-                        "score": s['score'],
-                        "price": s['price'],
-                        "signal": "BUY",
-                    }
-                    for s in scored
-                ]
                 logger.warning(
                     f"[SCAN] {len(scored)} qualified setup(s). "
                     f"Top: {scored[0]['symbol']} ({scored[0]['score']:.0f}/100)"
                 )
             else:
                 logger.warning("[SCAN] No high-quality setups found this cycle.")
+
+            # -- Trading hours filter (only blocks opening positions, not scanning) --
+            hours_ok, hours_reason = is_good_time_to_trade(CONFIG)
+            if not hours_ok:
+                logger.warning(f"[HOURS] {hours_reason} — scan done, skipping entries.")
+                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
+                _log_status(status, time.time() - cycle_start, scan_interval_sec)
+                weekly_report.check_and_send(notifier)
+                return
+
+            if not sentiment_ok:
+                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
+                _log_status(status, time.time() - cycle_start, scan_interval_sec)
+                return
 
             # -- Open positions for top candidates -----------------------------
             entries_opened = 0
