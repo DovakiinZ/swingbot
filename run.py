@@ -47,6 +47,7 @@ from data.polymarket_client import PolymarketClient
 from strategy.macro_filter import compute_macro_risk_scale
 from signals.dump_btc import get_btc_risk_factor_for_symbol
 from ml.model import SwingbotModel
+from core.goal_tracker import GoalTracker
 from core.notifier import Notifier
 from core.trading_hours import is_good_time_to_trade
 from risk.conservative_mode import ConservativeMode
@@ -104,7 +105,7 @@ def _passes_entry_checklist(
 
 def start_dashboard(config: dict, store_inst, state_dict,
                     notifier_inst=None, conservative_inst=None,
-                    weekly_report_inst=None) -> None:
+                    weekly_report_inst=None, goal_tracker_inst=None) -> None:
     """Start Flask dashboard in a background daemon thread."""
     if not config.get('dashboard', {}).get('enabled', True):
         return
@@ -118,6 +119,7 @@ def start_dashboard(config: dict, store_inst, state_dict,
     app.config['notifier'] = notifier_inst
     app.config['conservative_mode'] = conservative_inst
     app.config['weekly_report'] = weekly_report_inst
+    app.config['goal_tracker'] = goal_tracker_inst
 
     port = config.get('dashboard', {}).get('port', 8080)
     host = config.get('dashboard', {}).get('host', '0.0.0.0')
@@ -286,6 +288,7 @@ def main():
     notifier          = Notifier(CONFIG)
     conservative_mode = ConservativeMode(store, CONFIG)
     weekly_report     = WeeklyReport(store, CONFIG)
+    goal_tracker      = GoalTracker(CONFIG, store)
 
     poly_client = None
     if CONFIG.get('polymarket', {}).get('enabled', False):
@@ -322,7 +325,8 @@ def main():
     start_dashboard(CONFIG, store, dashboard_state,
                     notifier_inst=notifier,
                     conservative_inst=conservative_mode,
-                    weekly_report_inst=weekly_report)
+                    weekly_report_inst=weekly_report,
+                    goal_tracker_inst=goal_tracker)
 
     # --- Startup Banner -------------------------------------------------------
     mode_str = i18n.get("MODE_LIVE") if is_live else i18n.get("MODE_PAPER")
@@ -411,6 +415,7 @@ def main():
             # Update dashboard state
             dashboard_state['total_balance'] = current_bal
             dashboard_state['daily_pnl'] = day_pnl
+            dashboard_state['goal_tracker'] = goal_tracker.get_status(current_bal)
             start_bal = daily_stats.get('start_balance', current_bal)
             dashboard_state['daily_pnl_pct'] = (day_pnl / start_bal * 100) if start_bal else 0
 

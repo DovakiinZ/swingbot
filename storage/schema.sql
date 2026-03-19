@@ -97,6 +97,20 @@ CREATE TABLE IF NOT EXISTS scan_results (
     scanned_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS committee_decisions (
+    id              TEXT PRIMARY KEY,
+    timestamp       INTEGER NOT NULL,
+    symbol          TEXT NOT NULL,
+    approved        INTEGER DEFAULT 0,
+    final_score     REAL DEFAULT 0,
+    size_multiplier REAL DEFAULT 1.0,
+    veto_by         TEXT,
+    veto_reason     TEXT,
+    verdicts_json   TEXT,
+    trade_executed  INTEGER DEFAULT 0,
+    trade_id        TEXT
+);
+
 CREATE TABLE IF NOT EXISTS trade_features (
     id              TEXT PRIMARY KEY,
     trade_id        TEXT NOT NULL,

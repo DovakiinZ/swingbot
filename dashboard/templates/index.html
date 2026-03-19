@@ -171,6 +171,66 @@ body { padding-bottom: 70px; }
 .tab-btn svg { width: 22px; height: 22px; fill: currentColor; }
 .tab-btn.active { color: var(--green); }
 
+/* Goal Tracker */
+.goal-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; margin-bottom: 12px; }
+.goal-title { font-size: 14px; font-weight: 700; color: var(--gold); margin-bottom: 12px; }
+.goal-amounts { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2);
+  margin-bottom: 4px; }
+.goal-bar { height: 10px; background: rgba(255,255,255,0.06); border-radius: 5px; overflow: hidden;
+  margin-bottom: 4px; }
+.goal-bar-fill { height: 100%; border-radius: 5px; transition: width 0.8s ease;
+  background: linear-gradient(90deg, #3d8bff, #00e5a0); }
+.goal-pct { font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+.phase-section { border-top: 1px solid rgba(30,42,56,0.5); padding-top: 10px; margin-top: 8px; }
+.phase-title { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.phase-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;
+  margin-bottom: 4px; }
+.phase-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease;
+  background: var(--green); }
+.phase-bar-fill.pulse { animation: pulse-bar 1.5s ease-in-out infinite; }
+@keyframes pulse-bar { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.goal-projection { font-size: 12px; color: var(--text2); margin-top: 8px; }
+
+/* Live prices */
+.live-dot { display: inline-block; width: 8px; height: 8px; background: var(--green);
+  border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+.live-dot.active { animation: blink-dot 1.5s ease-in-out infinite; }
+@keyframes blink-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.delayed-badge { font-size: 10px; color: var(--gold); margin-right: 4px; }
+.price-row { display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid rgba(30,42,56,0.3); }
+.price-row:last-child { border-bottom: none; }
+.price-left { flex: 1; }
+.price-sym { font-weight: 700; font-size: 14px; }
+.price-val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.price-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.price-right { text-align: left; }
+.price-change { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+
+/* Committee tab */
+.agent-bar { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px;
+  overflow: hidden; flex: 1; margin: 0 8px; }
+.agent-bar-fill { height: 100%; border-radius: 4px; background: var(--green); }
+.agent-row { display: flex; align-items: center; padding: 6px 0; font-size: 13px; }
+.agent-name { min-width: 120px; font-weight: 600; }
+.agent-pct { font-family: var(--mono); min-width: 45px; text-align: left; font-weight: 700; }
+.decision-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 8px; overflow: hidden; cursor: pointer; }
+.decision-header { display: flex; justify-content: space-between; align-items: center;
+  padding: 12px; }
+.decision-card.approved { border-right: 4px solid var(--green); }
+.decision-card.vetoed { border-right: 4px solid var(--red); }
+.decision-card.rejected { border-right: 4px solid #444; }
+.decision-details { display: none; padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.decision-details.open { display: block; }
+.verdict-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+.filter-bar { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; }
+.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text2); font-size: 12px; cursor: pointer;
+  white-space: nowrap; font-family: var(--font); }
+.filter-btn.active { background: var(--green); color: var(--bg); border-color: var(--green); }
+
 @media (min-width: 600px) {
   .tab-content { max-width: 500px; margin: 0 auto; }
   .header { max-width: 500px; margin: 0 auto; }
@@ -200,7 +260,27 @@ body { padding-bottom: 70px; }
     <div class="status-row"><span class="status-label">⏰ فلتر الأوقات</span><span class="status-value status-ok" id="sHours">OK</span></div>
     <div class="status-row"><span class="status-label">⏱ المسح القادم</span><span class="status-value" id="sNextScan" style="color:var(--blue)">--:--</span></div>
   </div>
-  <div class="scan-title">── أفضل الفرص ──</div>
+  <!-- Goal Tracker -->
+  <div class="goal-card" id="goalTracker" style="display:none">
+    <div class="goal-title" id="goalTitle">🎯 Goal: $100 → $1,000</div>
+    <div class="goal-amounts">
+      <span id="goalCurrent">$0</span>
+      <span id="goalTarget">$1,000</span>
+    </div>
+    <div class="goal-bar"><div class="goal-bar-fill" id="goalBarFill" style="width:0%"></div></div>
+    <div class="goal-pct" id="goalPct">0% complete</div>
+    <div class="phase-section">
+      <div class="phase-title" id="phaseTitle">── Phase 1: $100 → $250 ──</div>
+      <div class="phase-bar"><div class="phase-bar-fill" id="phaseBarFill" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
+        <span id="phaseCurrent">$0 / $250</span>
+        <span id="phasePct">0%</span>
+      </div>
+    </div>
+    <div class="goal-projection" id="goalProjection"></div>
+  </div>
+
+  <div class="scan-title">── أفضل الفرص ── <span class="live-dot" id="liveDot" title="Live prices"></span></div>
   <div id="scanResults"></div>
 </div>
 
@@ -403,6 +483,25 @@ body { padding-bottom: 70px; }
   </div>
 </div>
 
+<!-- Tab 6: Committee -->
+<div id="tab-committee" class="tab-content">
+  <h3 style="margin-bottom:12px;color:var(--gold)">🏆 Agent Accuracy</h3>
+  <div class="card" id="agentAccuracy">
+    <p style="color:var(--text2);font-size:13px">Need 10+ decisions to calculate accuracy</p>
+  </div>
+  <div class="card" id="vetoStats" style="display:none">
+    <div style="font-size:13px;color:var(--text2)" id="vetoText"></div>
+  </div>
+  <div class="filter-bar" id="committeeFilters">
+    <button class="filter-btn active" data-filter="all" onclick="filterCommittee('all',this)">All</button>
+    <button class="filter-btn" data-filter="approved" onclick="filterCommittee('approved',this)">Approved</button>
+    <button class="filter-btn" data-filter="vetoed" onclick="filterCommittee('vetoed',this)">Vetoed</button>
+    <button class="filter-btn" data-filter="rejected" onclick="filterCommittee('rejected',this)">Rejected</button>
+  </div>
+  <div class="scan-title">── Decision History ──</div>
+  <div id="committeeList"></div>
+</div>
+
 <!-- Tab Bar -->
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="home">
@@ -421,6 +520,10 @@ body { padding-bottom: 70px; }
     <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/></svg>
     <span>التقارير</span>
   </button>
+  <button class="tab-btn" data-tab="committee">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+    <span>Committee</span>
+  </button>
   <button class="tab-btn" data-tab="settings">
     <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
     <span>الإعدادات</span>
@@ -432,6 +535,10 @@ body { padding-bottom: 70px; }
 
 <script>
 let nextScanSec = 0, balChart = null;
+let livePrices = {};
+let pricesLive = false;
+let committeeFilter = 'all';
+let committeeData = null;
 
 // Tabs
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -443,6 +550,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'history') loadHistory();
     if (btn.dataset.tab === 'reports') loadReports();
     if (btn.dataset.tab === 'settings') loadSettings();
+    if (btn.dataset.tab === 'committee') loadCommittee();
   });
 });
 
@@ -473,8 +581,89 @@ function timeAgo(sec) {
   if (sec < 3600) return Math.floor(sec / 60) + ' دقيقة';
   return Math.floor(sec / 3600) + ' ساعة';
 }
+function fmtVol(v) {
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+function fmtPrice(v) {
+  if (v >= 1000) return v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (v >= 1) return v.toFixed(2);
+  return v.toFixed(4);
+}
 
-// Status
+// ── Live Prices ──────────────────────────────────────────────────────
+async function fetchLivePrices() {
+  const d = await api('/api/prices');
+  if (d && Object.keys(d).length > 0) {
+    livePrices = d;
+    pricesLive = true;
+    document.getElementById('liveDot').classList.add('active');
+  } else {
+    pricesLive = false;
+    document.getElementById('liveDot').classList.remove('active');
+  }
+  updateScannerWithPrices();
+  updatePositionsWithPrices();
+}
+
+function updateScannerWithPrices() {
+  // Called after prices update — re-render scan results with live data
+  const container = document.getElementById('scanResults');
+  const items = container.querySelectorAll('.scan-item, .price-row');
+  // If we already rendered price rows, don't duplicate — they'll be re-rendered on next loadStatus
+}
+
+function updatePositionsWithPrices() {
+  // Update open positions P&L with live prices
+  const cards = document.querySelectorAll('.pos-card');
+  cards.forEach(card => {
+    const sym = card.dataset.symbol;
+    if (!sym || !livePrices[sym]) return;
+    const p = livePrices[sym];
+    const currentEl = card.querySelector('.pos-current-price');
+    if (currentEl) currentEl.textContent = '$' + fmtPrice(p.price);
+  });
+}
+
+// ── Goal Tracker ─────────────────────────────────────────────────────
+function updateGoalTracker(gt) {
+  const card = document.getElementById('goalTracker');
+  if (!gt || !gt.target_balance) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  document.getElementById('goalTitle').textContent =
+    '🎯 Goal: $' + gt.start_balance + ' → $' + gt.target_balance.toLocaleString();
+  document.getElementById('goalCurrent').textContent = '$' + gt.current_balance.toFixed(2);
+  document.getElementById('goalTarget').textContent = '$' + gt.target_balance.toLocaleString();
+  document.getElementById('goalBarFill').style.width = Math.min(gt.progress_pct, 100) + '%';
+  document.getElementById('goalPct').textContent = gt.progress_pct.toFixed(1) + '% complete';
+
+  // Phase
+  document.getElementById('phaseTitle').textContent =
+    '── ' + gt.phase_name + ': $' + gt.phase_start + ' → $' + gt.phase_target + ' ──';
+  const phaseBar = document.getElementById('phaseBarFill');
+  phaseBar.style.width = Math.min(gt.phase_progress_pct, 100) + '%';
+  // Pulse animation when near completion
+  if (gt.phase_progress_pct >= 90) phaseBar.classList.add('pulse');
+  else phaseBar.classList.remove('pulse');
+
+  document.getElementById('phaseCurrent').textContent =
+    '$' + gt.current_balance.toFixed(2) + ' / $' + gt.phase_target;
+  document.getElementById('phasePct').textContent =
+    gt.phase_progress_pct.toFixed(1) + '%' + (gt.phase_progress_pct >= 90 ? ' 🔥' : '');
+
+  document.getElementById('goalProjection').textContent =
+    gt.trades_completed + ' trades · ' + gt.projected_completion;
+
+  // Gold glow when near target
+  if (gt.current_balance > gt.target_balance * 0.9) {
+    document.getElementById('goalTarget').style.color = 'var(--gold)';
+  }
+}
+
+// ── Status ───────────────────────────────────────────────────────────
 async function loadStatus() {
   const d = await api('/api/status');
   if (!d) { document.getElementById('disconnected').classList.add('show'); return; }
@@ -513,22 +702,50 @@ async function loadStatus() {
   nextScanSec = d.next_scan_seconds || 0;
   document.getElementById('sNextScan').textContent = fmtTime(nextScanSec);
 
+  // Goal tracker
+  if (d.goal_tracker) updateGoalTracker(d.goal_tracker);
+
+  // Scan results with live prices
   const sr = d.scan_results || [];
   const container = document.getElementById('scanResults');
   if (!sr.length) {
     container.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">لا توجد نتائج مسح</p>';
   } else {
-    container.innerHTML = sr.slice(0, 5).map(s => {
+    container.innerHTML = sr.slice(0, 8).map(s => {
       const pct = Math.min(s.score, 100);
       const color = pct >= 75 ? 'var(--green)' : pct >= 60 ? 'var(--gold)' : 'var(--text2)';
       const sig = s.signal === 'BUY' ? 'BUY' : 'انتظار';
       const sigClass = s.signal === 'BUY' ? 'signal-buy' : 'signal-hold';
       const fire = pct >= 80 ? ' 🔥' : '';
-      return `<div class="scan-item">
-        <span class="scan-sym">${s.symbol}</span>
-        <span class="scan-score" style="color:${color}">${Math.round(pct)}</span>
-        <div class="scan-bar"><div class="scan-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-        <span class="scan-signal ${sigClass}">${sig}${fire}</span>
+
+      // Live price data
+      const lp = livePrices[s.symbol];
+      let priceHtml = '';
+      if (lp) {
+        const chg = lp.change_24h || 0;
+        const chgColor = chg >= 0 ? 'var(--green)' : 'var(--red)';
+        const arrow = chg >= 0 ? '▲' : '▼';
+        priceHtml = `
+          <div style="font-family:var(--mono);font-size:12px;font-weight:600">$${fmtPrice(lp.price)}</div>
+          <div style="font-size:11px;color:${chgColor}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% ${arrow}</div>
+          <div style="font-size:10px;color:var(--text2)">H: $${fmtPrice(lp.high_24h)} L: $${fmtPrice(lp.low_24h)}</div>
+          <div style="font-size:10px;color:var(--text2)">Vol: ${fmtVol(lp.volume_24h)}</div>`;
+      } else if (s.price) {
+        priceHtml = `<div style="font-family:var(--mono);font-size:12px">$${fmtPrice(s.price)}</div>`;
+      }
+
+      return `<div class="price-row">
+        <div class="price-left">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span class="price-sym">${s.symbol}</span>
+            <span style="font-family:var(--mono);font-size:12px;color:${color}">${Math.round(pct)}/100</span>
+            <span class="scan-signal ${sigClass}" style="font-size:11px">${sig}${fire}</span>
+          </div>
+          <div class="scan-bar" style="margin-bottom:0"><div class="scan-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>
+        <div class="price-right" style="min-width:100px;text-align:left;padding-right:4px">
+          ${priceHtml}
+        </div>
       </div>`;
     }).join('');
   }
@@ -543,20 +760,36 @@ async function loadPositions() {
     return;
   }
   container.innerHTML = d.map(p => {
-    const pnl = p.unrealized_pnl || 0;
-    const pnlPct = p.unrealized_pnl_pct || 0;
+    // Use live price if available
+    const lp = livePrices[p.symbol];
+    let currentPrice = p.current_price || p.entry_price;
+    let pnl = p.unrealized_pnl || 0;
+    let pnlPct = p.unrealized_pnl_pct || 0;
+
+    if (lp && lp.price) {
+      currentPrice = lp.price;
+      if (p.side === 'LONG') {
+        pnl = (currentPrice - p.entry_price) * (p.unrealized_pnl / ((p.current_price || p.entry_price) - p.entry_price) || 0);
+      }
+      // Recalculate if we have amount info from entry
+      if (p.entry_price > 0) {
+        const diff = p.side === 'LONG' ? currentPrice - p.entry_price : p.entry_price - currentPrice;
+        pnlPct = (diff / p.entry_price) * 100;
+      }
+    }
+
     const isLoss = pnl < 0;
     const sideClass = p.side === 'LONG' ? 'pos-long' : 'pos-short';
-    return `<div class="card pos-card ${isLoss ? 'losing' : ''}">
+    return `<div class="card pos-card ${isLoss ? 'losing' : ''}" data-symbol="${p.symbol}">
       <div class="pos-header">
         <span class="pos-symbol">${p.symbol}</span>
         <span class="pos-side ${sideClass}">${p.side === 'LONG' ? '▲ LONG' : '▼ SHORT'}</span>
       </div>
       <div class="pos-grid">
-        <div class="pos-field"><span class="pos-field-label">دخول</span><span class="pos-field-value">$${p.entry_price.toFixed(4)}</span></div>
-        <div class="pos-field"><span class="pos-field-label">الحين</span><span class="pos-field-value">$${(p.current_price||0).toFixed(4)}</span></div>
-        <div class="pos-field"><span class="pos-field-label">وقف 🛑</span><span class="pos-field-value">$${(p.stop_loss||0).toFixed(4)}</span></div>
-        <div class="pos-field"><span class="pos-field-label">هدف 🎯</span><span class="pos-field-value">$${(p.take_profit||0).toFixed(4)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">دخول</span><span class="pos-field-value">$${fmtPrice(p.entry_price)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">الحين</span><span class="pos-field-value pos-current-price">$${fmtPrice(currentPrice)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">وقف 🛑</span><span class="pos-field-value">$${fmtPrice(p.stop_loss||0)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">هدف 🎯</span><span class="pos-field-value">$${fmtPrice(p.take_profit||0)}</span></div>
         <div class="pos-field"><span class="pos-field-label">ربح</span><span class="pos-field-value ${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${fmtPct(pnlPct)})</span></div>
         <div class="pos-field"><span class="pos-field-label">مفتوحة</span><span class="pos-field-value">منذ ${timeAgo(p.opened_ago_seconds)}</span></div>
       </div>
@@ -825,6 +1058,124 @@ async function saveRisk() {
   toast(d?.ok ? 'تم حفظ إعدادات المخاطر' : 'خطأ', !d?.ok);
 }
 
+// ── Committee Tab ─────────────────────────────────────────────────
+async function loadCommittee() {
+  const d = await api('/api/committee/history');
+  if (!d) return;
+  committeeData = d;
+
+  // Agent accuracy leaderboard
+  const accEl = document.getElementById('agentAccuracy');
+  const acc = d.agent_accuracy || {};
+  const agents = Object.entries(acc).sort((a, b) => b[1].accuracy - a[1].accuracy);
+
+  if (agents.length === 0) {
+    accEl.innerHTML = '<p style="color:var(--text2);font-size:13px">Need 10+ decisions to calculate accuracy</p>';
+  } else {
+    const medals = ['🥇', '🥈', '🥉', '  ', '  '];
+    accEl.innerHTML = agents.map((a, i) => {
+      const [name, stats] = a;
+      const barW = Math.min(stats.accuracy, 100);
+      const color = stats.accuracy >= 75 ? 'var(--green)' : stats.accuracy >= 60 ? 'var(--gold)' : 'var(--red)';
+      return `<div class="agent-row">
+        <span style="width:24px">${medals[i] || '  '}</span>
+        <span class="agent-name">${name}</span>
+        <div class="agent-bar"><div class="agent-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+        <span class="agent-pct" style="color:${color}">${stats.accuracy.toFixed(1)}%</span>
+      </div>`;
+    }).join('') + `<div style="font-size:11px;color:var(--text2);margin-top:8px;text-align:center">${agents[0]?.[1]?.decisions || 0} decisions analyzed</div>`;
+  }
+
+  // Veto stats
+  const vs = d.veto_stats || {};
+  const vetoEl = document.getElementById('vetoStats');
+  if (vs.total_vetoes > 0) {
+    vetoEl.style.display = 'block';
+    const byAgent = vs.by_agent || {};
+    const byAgentStr = Object.entries(byAgent).map(([a, c]) => `${a}: ${c}`).join(' · ');
+    document.getElementById('vetoText').innerHTML =
+      `🚫 Vetoes: <b>${vs.total_vetoes}</b> total` +
+      (byAgentStr ? ` · ${byAgentStr}` : '');
+  } else {
+    vetoEl.style.display = 'none';
+  }
+
+  renderCommitteeList(d.decisions || []);
+}
+
+function filterCommittee(filter, btn) {
+  committeeFilter = filter;
+  document.querySelectorAll('#committeeFilters .filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (committeeData) renderCommitteeList(committeeData.decisions || []);
+}
+
+function renderCommitteeList(decisions) {
+  const container = document.getElementById('committeeList');
+  let filtered = decisions;
+
+  if (committeeFilter === 'approved') filtered = decisions.filter(d => d.approved && !d.veto_by);
+  else if (committeeFilter === 'vetoed') filtered = decisions.filter(d => d.veto_by);
+  else if (committeeFilter === 'rejected') filtered = decisions.filter(d => !d.approved && !d.veto_by);
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty-state" style="padding:30px">No decisions yet</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(d => {
+    const isVetoed = !!d.veto_by;
+    const isApproved = d.approved && !isVetoed;
+    const cardClass = isVetoed ? 'vetoed' : isApproved ? 'approved' : 'rejected';
+
+    let icon, label, pnlStr = '';
+    if (isVetoed) {
+      icon = '🚫'; label = `VETOED · ${d.veto_by}`;
+    } else if (isApproved) {
+      icon = d.trade_outcome === 'WIN' ? '✅' : d.trade_outcome === 'LOSS' ? '❌' : '⏳';
+      const outcomeLabel = d.trade_outcome || 'PENDING';
+      pnlStr = d.trade_pnl != null ? ` ${d.trade_pnl >= 0 ? '+' : ''}$${d.trade_pnl.toFixed(2)}` : '';
+      label = `${d.final_score.toFixed(1)}/100 ${pnlStr} ${outcomeLabel}`;
+    } else {
+      icon = '❌'; label = `${d.final_score.toFixed(1)}/100 REJECTED`;
+    }
+
+    const ts = d.timestamp ? new Date(d.timestamp * 1000).toLocaleString() : '';
+
+    // Verdicts detail
+    const verdicts = d.verdicts || {};
+    const verdictRows = Object.entries(verdicts).map(([name, v]) => {
+      const score = typeof v === 'object' ? (v.score || 0) : 0;
+      const rec = typeof v === 'object' ? (v.rec || '-') : v;
+      const recColor = rec === 'BUY' || rec === 'SELL' ? 'var(--green)' : 'var(--text2)';
+      return `<div class="verdict-row">
+        <span>${name}</span>
+        <span style="font-family:var(--mono)">${score}</span>
+        <span style="color:${recColor};font-weight:600">${rec}</span>
+      </div>`;
+    }).join('');
+
+    const vetoReason = isVetoed && d.veto_reason ? `<div style="font-size:12px;color:var(--red);margin-top:4px">Reason: ${d.veto_reason}</div>` : '';
+
+    return `<div class="decision-card ${cardClass}" onclick="this.querySelector('.decision-details').classList.toggle('open')">
+      <div class="decision-header">
+        <div>
+          <span style="font-size:14px">${icon}</span>
+          <span style="font-weight:700;margin:0 6px">${d.symbol}</span>
+          <span style="font-size:12px;color:var(--text2)">${label}</span>
+        </div>
+        <span style="font-size:11px;color:var(--text2)">▼</span>
+      </div>
+      <div class="decision-details">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${ts}</div>
+        ${verdictRows}
+        ${vetoReason}
+        ${d.trade_outcome ? `<div style="font-size:12px;margin-top:6px;color:${d.trade_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">Result: ${pnlStr} ${d.trade_outcome}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // Countdown timer
 setInterval(() => {
   if (nextScanSec > 0) nextScanSec--;
@@ -839,7 +1190,9 @@ async function refresh() {
 }
 
 refresh();
+fetchLivePrices();
 setInterval(refresh, 30000);
+setInterval(fetchLivePrices, 5000);
 </script>
 </body>
 </html>

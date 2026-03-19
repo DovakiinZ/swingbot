@@ -7,6 +7,8 @@ import os
 import json
 import time
 import logging
+import threading
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Optional
 from pathlib import Path
@@ -136,6 +138,10 @@ def create_app(store=None, state=None, config: dict = None):
     app.config['notifier'] = None
     app.config['conservative_mode'] = None
     app.config['weekly_report'] = None
+    app.config['goal_tracker'] = None
+
+    # ── Live prices cache ────────────────────────────────────────────
+    _price_cache = {'data': {}, 'updated_at': 0, 'lock': threading.Lock()}
 
     # --- Auth decorator --------------------------------------------------------
 
@@ -231,6 +237,16 @@ def create_app(store=None, state=None, config: dict = None):
         start = phase_starts.get(phase, base_balance)
         phase_progress = ((balance - start) / (target - start) * 100) if target > start else 0
 
+        # Goal tracker
+        goal_data = snapshot.get('goal_tracker', {})
+        if not goal_data:
+            gt = app.config.get('goal_tracker')
+            if gt:
+                try:
+                    goal_data = gt.get_status(balance)
+                except Exception:
+                    goal_data = {}
+
         return jsonify({
             'balance': snapshot.get('total_balance', 0),
             'mode': 'live' if snapshot.get('is_live', False) else 'paper',
@@ -252,6 +268,7 @@ def create_app(store=None, state=None, config: dict = None):
             'compounding_phase': phase,
             'phase_progress_pct': round(phase_progress, 1),
             'last_updated': snapshot.get('last_cycle', ''),
+            'goal_tracker': goal_data,
         })
 
     @app.route("/api/positions")
@@ -811,6 +828,112 @@ def create_app(store=None, state=None, config: dict = None):
             'losses': total - wins,
             'win_rate': round(win_rate, 1),
             'total_pnl': round(total_pnl, 2),
+        })
+
+    # ── Live Prices API (MEXC) ────────────────────────────────────────
+
+    @app.route("/api/prices")
+    @login_required
+    def api_prices():
+        """Fetch live tickers from MEXC for scanned symbols. Cached for 5 seconds."""
+        now = time.time()
+        with _price_cache['lock']:
+            if now - _price_cache['updated_at'] < 5 and _price_cache['data']:
+                return jsonify(_price_cache['data'])
+
+        # Get symbols from scan results or state
+        symbols = []
+        if state:
+            snapshot = state.snapshot() if hasattr(state, 'snapshot') else state
+            scan_results = snapshot.get('scan_results', [])
+            symbols = [s['symbol'] for s in scan_results if s.get('symbol')]
+
+        if not symbols and store:
+            try:
+                db_results = store.get_latest_scan_results()
+                symbols = [r.symbol for r in db_results]
+            except Exception:
+                pass
+
+        if not symbols:
+            symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+
+        try:
+            import ccxt
+            exchange = ccxt.mexc({'enableRateLimit': True})
+            tickers = exchange.fetch_tickers(symbols)
+
+            prices = {}
+            for symbol, t in tickers.items():
+                if t and t.get('last'):
+                    prices[symbol] = {
+                        'price':      t['last'],
+                        'change_24h': t.get('percentage', 0) or 0,
+                        'high_24h':   t.get('high', 0) or 0,
+                        'low_24h':    t.get('low', 0) or 0,
+                        'volume_24h': t.get('quoteVolume', 0) or 0,
+                        'bid':        t.get('bid', 0) or 0,
+                        'ask':        t.get('ask', 0) or 0,
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                    }
+
+            with _price_cache['lock']:
+                _price_cache['data'] = prices
+                _price_cache['updated_at'] = time.time()
+
+            return jsonify(prices)
+        except Exception as e:
+            # Return cached data if available, otherwise empty
+            with _price_cache['lock']:
+                if _price_cache['data']:
+                    return jsonify(_price_cache['data'])
+            logger.error(f"[Prices] MEXC fetch failed: {e}")
+            return jsonify({})
+
+    # ── Committee History API ──────────────────────────────────────────
+
+    @app.route("/api/committee/history")
+    @login_required
+    def api_committee_history():
+        """Returns committee decisions with agent accuracy stats."""
+        if store is None:
+            return jsonify({'decisions': [], 'agent_accuracy': {}, 'veto_stats': {}})
+
+        limit = request.args.get('limit', 50, type=int)
+        symbol = request.args.get('symbol', None)
+
+        decisions_raw = store.get_committee_history(limit=limit, symbol=symbol)
+
+        decisions = []
+        for d in decisions_raw:
+            verdicts = {}
+            try:
+                verdicts = json.loads(d.get('verdicts_json', '{}') or '{}')
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            decisions.append({
+                'id':               d.get('id', ''),
+                'timestamp':        d.get('timestamp', 0),
+                'symbol':           d.get('symbol', ''),
+                'approved':         bool(d.get('approved', 0)),
+                'final_score':      d.get('final_score', 0),
+                'size_multiplier':  d.get('size_multiplier', 1.0),
+                'veto_by':          d.get('veto_by'),
+                'veto_reason':      d.get('veto_reason'),
+                'verdicts':         verdicts,
+                'trade_executed':   bool(d.get('trade_executed', 0)),
+                'trade_outcome':    d.get('trade_outcome'),
+                'trade_pnl':        d.get('trade_pnl'),
+            })
+
+        agent_accuracy = store.get_agent_accuracy()
+        veto_stats = store.get_veto_stats()
+
+        return jsonify({
+            'decisions': decisions,
+            'agent_accuracy': agent_accuracy,
+            'veto_stats': veto_stats,
         })
 
     return app

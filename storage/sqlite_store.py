@@ -467,6 +467,187 @@ class SQLiteStore:
         conn.close()
         return [dict(row) for row in rows]
 
+    # --- Overall Stats ----------------------------------------------------------
+
+    def get_overall_stats(self) -> Dict[str, Any]:
+        """Get overall bot statistics for goal tracker and projections."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(pnl) as total_pnl,
+                   AVG(pnl) as avg_pnl
+            FROM positions WHERE status = 'CLOSED'
+        """)
+        row = cursor.fetchone()
+        conn.close()
+
+        total = row['total'] or 0
+        wins = row['wins'] or 0
+        total_pnl = row['total_pnl'] or 0
+        avg_pnl = row['avg_pnl'] or 0
+
+        return {
+            'total_trades': total,
+            'wins': wins,
+            'losses': total - wins,
+            'total_pnl': round(total_pnl, 2),
+            'avg_pnl': round(avg_pnl, 4),
+            'win_rate': round((wins / total * 100) if total > 0 else 0, 1),
+        }
+
+    # --- Committee History -----------------------------------------------------
+
+    def get_committee_history(self, limit: int = 50, symbol: str = None) -> list:
+        """
+        Returns committee decisions with trade outcomes joined in.
+        Reads from committee_decisions table, joins with positions for outcome.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT cd.*,
+                   p.pnl as trade_pnl,
+                   p.status as trade_status,
+                   CASE WHEN p.pnl > 0 THEN 'WIN'
+                        WHEN p.pnl < 0 THEN 'LOSS'
+                        WHEN p.pnl = 0 THEN 'BREAK_EVEN'
+                        ELSE NULL END as trade_outcome
+            FROM committee_decisions cd
+            LEFT JOIN positions p ON cd.trade_id = p.id
+        """
+        params = []
+        if symbol:
+            query += " WHERE cd.symbol = ?"
+            params.append(symbol)
+        query += " ORDER BY cd.timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        try:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except Exception:
+            conn.close()
+            return []
+
+    def save_committee_decision(self, decision: dict) -> None:
+        """Save a committee decision record."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO committee_decisions (
+                    id, timestamp, symbol, approved, final_score,
+                    size_multiplier, veto_by, veto_reason, verdicts_json,
+                    trade_executed, trade_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                decision.get('id', str(uuid.uuid4())),
+                decision.get('timestamp', int(time.time())),
+                decision.get('symbol', ''),
+                1 if decision.get('approved', False) else 0,
+                decision.get('final_score', 0),
+                decision.get('size_multiplier', 1.0),
+                decision.get('veto_by'),
+                decision.get('veto_reason'),
+                json.dumps(decision.get('verdicts', {})),
+                1 if decision.get('trade_executed', False) else 0,
+                decision.get('trade_id'),
+            ))
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+    def get_agent_accuracy(self) -> dict:
+        """
+        For each agent, count how many times their recommendation
+        matched the actual trade outcome.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT cd.verdicts_json,
+                       CASE WHEN p.pnl > 0 THEN 1 ELSE 0 END as won
+                FROM committee_decisions cd
+                JOIN positions p ON cd.trade_id = p.id
+                WHERE p.status = 'CLOSED' AND cd.trade_executed = 1
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            conn.close()
+            return {}
+
+        if len(rows) < 10:
+            return {}
+
+        agent_stats: Dict[str, Dict[str, int]] = {}
+
+        for row in rows:
+            try:
+                verdicts = json.loads(row['verdicts_json'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            won = row['won']
+            for agent_name, verdict in verdicts.items():
+                if agent_name not in agent_stats:
+                    agent_stats[agent_name] = {'decisions': 0, 'correct': 0}
+                agent_stats[agent_name]['decisions'] += 1
+
+                rec = verdict.get('rec', '').upper() if isinstance(verdict, dict) else ''
+                # Agent was "correct" if they said BUY and trade won
+                if (rec in ('BUY', 'SELL') and won) or (rec in ('HOLD', 'SKIP') and not won):
+                    agent_stats[agent_name]['correct'] += 1
+
+        result = {}
+        for agent, stats in agent_stats.items():
+            acc = (stats['correct'] / stats['decisions'] * 100) if stats['decisions'] > 0 else 0
+            result[agent] = {
+                'decisions': stats['decisions'],
+                'correct': stats['correct'],
+                'accuracy': round(acc, 1),
+            }
+
+        return result
+
+    def get_veto_stats(self) -> dict:
+        """
+        How many vetoes happened, by whom, and how many
+        of those vetoes were 'correct' (trade would have lost).
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT veto_by, COUNT(*) as cnt
+                FROM committee_decisions
+                WHERE veto_by IS NOT NULL
+                GROUP BY veto_by
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception:
+            conn.close()
+            return {'total_vetoes': 0, 'by_agent': {}}
+
+        total = sum(row['cnt'] for row in rows)
+        by_agent = {row['veto_by']: row['cnt'] for row in rows}
+
+        return {
+            'total_vetoes': total,
+            'by_agent': by_agent,
+        }
+
     def get_training_data_count(self) -> int:
         """Returns number of completed labeled training samples."""
         conn = self.get_connection()
