@@ -1,12 +1,32 @@
 from typing import Optional
+import logging
 import pandas as pd
 from core.types import Signal, Side, Reason, StrategyParams, Position
 from strategy.regimes import MarketRegime
 
+logger = logging.getLogger(__name__)
+
 
 class RsiEmaStrategy:
-    def __init__(self):
-        pass
+    def __init__(self, tb_config: Optional[dict] = None):
+        """
+        Args:
+            tb_config: Triple-barrier config dict with keys:
+                       'enabled', 'upper_multiplier', 'lower_multiplier', 'max_holding_hours'
+                       If None or not enabled, uses standard ATR multipliers from params.
+        """
+        self._tb_labeler = None
+        if tb_config and tb_config.get('use_for_signals', False):
+            try:
+                from ml.triple_barrier import TripleBarrierLabeler, BarrierConfig
+                self._tb_labeler = TripleBarrierLabeler(BarrierConfig(
+                    upper_multiplier=tb_config.get('upper_multiplier', 2.0),
+                    lower_multiplier=tb_config.get('lower_multiplier', 1.0),
+                    max_holding_hours=tb_config.get('max_holding_hours', 48)
+                ))
+                logger.info("[Strategy] Triple-Barrier dynamic TP/SL enabled")
+            except Exception as e:
+                logger.warning(f"[Strategy] TB init failed, using standard: {e}")
 
     def check_signal(self,
                      df: pd.DataFrame,
@@ -55,10 +75,16 @@ class RsiEmaStrategy:
             vol_ok = atr_pct < 5.0
 
             if trend_ok and rsi_ok and vol_ok:
-                sl_dist = atr * params.sl_mult
-                tp_dist = atr * params.tp_mult
-                stop_loss = close - sl_dist
-                take_profit = close + tp_dist
+                # Use Triple-Barrier dynamic barriers if available
+                if self._tb_labeler:
+                    barriers = self._tb_labeler.get_dynamic_barriers(
+                        entry_price=close, atr=atr, side="BUY"
+                    )
+                    stop_loss = barriers['stop_loss']
+                    take_profit = barriers['take_profit']
+                else:
+                    stop_loss = close - (atr * params.sl_mult)
+                    take_profit = close + (atr * params.tp_mult)
 
                 return Signal(
                     symbol=symbol,
@@ -77,13 +103,24 @@ class RsiEmaStrategy:
                 short_vol_ok   = atr_pct < 5.0                # Not chaotic
 
                 if short_trend_ok and short_rsi_ok and short_vol_ok:
+                    # Use Triple-Barrier dynamic barriers if available
+                    if self._tb_labeler:
+                        barriers = self._tb_labeler.get_dynamic_barriers(
+                            entry_price=close, atr=atr, side="SELL"
+                        )
+                        short_sl = barriers['stop_loss']
+                        short_tp = barriers['take_profit']
+                    else:
+                        short_sl = close + (atr * params.sl_mult)
+                        short_tp = close - (atr * params.tp_mult)
+
                     return Signal(
                         symbol=symbol,
                         side=Side.SELL,
                         reason=Reason.SIGNAL_ENTRY,
                         price=close,
-                        stop_loss=close + (atr * params.sl_mult),    # SL above price
-                        take_profit=close - (atr * params.tp_mult),  # TP below price
+                        stop_loss=short_sl,
+                        take_profit=short_tp,
                         params=params
                     )
 

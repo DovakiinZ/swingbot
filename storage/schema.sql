@@ -158,6 +158,13 @@ CREATE TABLE IF NOT EXISTS trade_features (
     pnl_percent     REAL,
     hold_hours      REAL,
     exit_reason     TEXT,
+    -- Triple-Barrier labels (richer than binary outcome)
+    tb_label            INTEGER,        -- +1, 0, -1
+    tb_hours_to_barrier REAL,           -- How long until barrier hit
+    tb_barrier_hit      TEXT,           -- "upper", "lower", "time"
+    tb_upper_barrier    REAL,           -- TP price at entry
+    tb_lower_barrier    REAL,           -- SL price at entry
+    tb_return_pct       REAL,           -- Actual return achieved
     -- Timestamps
     captured_at     INTEGER NOT NULL
 );

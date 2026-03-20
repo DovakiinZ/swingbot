@@ -47,6 +47,7 @@ from data.polymarket_client import PolymarketClient
 from strategy.macro_filter import compute_macro_risk_scale
 from signals.dump_btc import get_btc_risk_factor_for_symbol
 from ml.model import SwingbotModel
+from ml.triple_barrier import TripleBarrierLabeler, BarrierConfig
 from core.goal_tracker import GoalTracker
 from core.notifier import Notifier
 from core.trading_hours import is_good_time_to_trade
@@ -276,13 +277,23 @@ def main():
         api_failure_limit=CONFIG['api_failure_limit']
     )
 
-    strategy        = RsiEmaStrategy()
+    strategy        = RsiEmaStrategy(tb_config=CONFIG.get('triple_barrier'))
     scanner         = MarketScanner()
     bandit          = Bandit(store, exploration_prob=CONFIG['bandit']['exploration_prob'])
     reporter        = DailyReport(store)
     sentiment_engine = SentimentEngine()
     selector        = SymbolSelector(market.exchange, market=market)
     ml_model        = SwingbotModel()
+
+    # Triple-Barrier labeler for richer training data
+    tb_conf = CONFIG.get('triple_barrier', {})
+    tb_labeler = None
+    if tb_conf.get('enabled', False):
+        tb_labeler = TripleBarrierLabeler(BarrierConfig(
+            upper_multiplier=tb_conf.get('upper_multiplier', 2.0),
+            lower_multiplier=tb_conf.get('lower_multiplier', 1.0),
+            max_holding_hours=tb_conf.get('max_holding_hours', 48)
+        ))
 
     allow_short = CONFIG.get('allow_short', True)
 
@@ -346,6 +357,7 @@ def main():
     print(f"Exchange: {primary_exchange.upper()} | Scan interval: {CONFIG.get('scan_interval_minutes', 10)}m")
     print(f"Short selling: {'ENABLED' if allow_short else 'DISABLED'}")
     print(f"ML Model: {'LOADED' if ml_model.is_trained else 'NOT TRAINED (scanner-only mode)'}")
+    print(f"Triple-Barrier: {'ENABLED' if tb_labeler else 'DISABLED'}")
 
     if scanner_enabled:
         print(f"Scanner: ENABLED | Max Positions: {max_positions}")
@@ -366,6 +378,57 @@ def main():
         else:
             print(i18n.get("BANNER_PAPER_BAL").format(total=broker.get_balance()))
     print("="*50 + "\n")
+
+    # --- Triple-Barrier labeling on trade close ------------------------------
+    def label_closed_trade(pos):
+        """Fetch candles since entry, apply TB labeling, save to DB."""
+        if not tb_labeler:
+            return
+        try:
+            candles_data = market.fetch_ohlcv(pos.symbol, timeframe, limit=lookback)
+            if not candles_data:
+                return
+            df_tb = FeatureEngine.compute_indicators(candles_data)
+            if df_tb.empty:
+                return
+
+            # Find candles after entry time
+            import pandas as _pd
+            entry_ts = pos.entry_time
+            future = df_tb[df_tb.index > _pd.Timestamp(entry_ts, unit='ms')]
+            if future.empty:
+                return
+
+            # ATR at entry
+            before_entry = df_tb[df_tb.index <= _pd.Timestamp(entry_ts, unit='ms')]
+            atr_at_entry = before_entry.iloc[-1].get('atr', 0) if not before_entry.empty else 0
+            if atr_at_entry <= 0:
+                return
+
+            tb_result = tb_labeler.label_trade(
+                entry_price=pos.entry_price,
+                candles_after_entry=future,
+                atr_at_entry=atr_at_entry,
+                side=pos.side.value
+            )
+
+            store.update_trade_barrier_label(pos.id, {
+                'tb_label':            tb_result.label,
+                'tb_hours_to_barrier': tb_result.hours_to_barrier,
+                'tb_barrier_hit':      tb_result.barrier_hit,
+                'tb_upper_barrier':    tb_result.upper_barrier,
+                'tb_lower_barrier':    tb_result.lower_barrier,
+                'tb_return_pct':       tb_result.return_pct,
+            })
+
+            logger.info(
+                f"[TB] {pos.symbol}: label={tb_result.label:+d} | "
+                f"hit={tb_result.barrier_hit} | "
+                f"hours={tb_result.hours_to_barrier:.1f} | "
+                f"return={tb_result.return_pct:.2%}"
+            )
+        except Exception as e:
+            logger.warning(f"[TB] Labeling failed for {pos.symbol}: {e}")
 
     # --- Main cycle -----------------------------------------------------------
     def job():
@@ -576,6 +639,8 @@ def main():
                                 exit_reason=sig.reason.value,
                                 hold_hours=hold_hours
                             )
+                            # Triple-Barrier labeling
+                            label_closed_trade(pos)
                             # Notify exit
                             try:
                                 notifier.notify_exit(sym, sig.reason.value, pnl, pnl_pct,
@@ -608,6 +673,8 @@ def main():
                                     exit_reason=exit_sig.reason.value,
                                     hold_hours=hold_hours
                                 )
+                                # Triple-Barrier labeling
+                                label_closed_trade(pos)
                                 # Notify SL/TP exit
                                 try:
                                     notifier.notify_exit(sym, exit_sig.reason.value, pnl, pnl_pct,

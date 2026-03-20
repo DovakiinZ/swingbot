@@ -804,7 +804,7 @@ def create_app(store=None, state=None, config: dict = None):
     @app.route("/api/stats")
     @login_required
     def api_stats():
-        """Overall bot statistics."""
+        """Overall bot statistics including Triple-Barrier analysis."""
         if store is None:
             return jsonify({})
         conn = store.get_connection()
@@ -823,12 +823,16 @@ def create_app(store=None, state=None, config: dict = None):
         total_pnl = row['total_pnl'] or 0
         win_rate = (wins / total * 100) if total > 0 else 0
 
+        # Triple-Barrier stats
+        tb_stats = store.get_triple_barrier_stats()
+
         return jsonify({
             'total_trades': total,
             'wins': wins,
             'losses': total - wins,
             'win_rate': round(win_rate, 1),
             'total_pnl': round(total_pnl, 2),
+            'triple_barrier_stats': tb_stats,
         })
 
     # ── Live Prices API (MEXC) ────────────────────────────────────────

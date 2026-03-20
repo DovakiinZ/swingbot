@@ -23,7 +23,30 @@ class SQLiteStore:
             schema = f.read()
         conn = sqlite3.connect(self.db_path)
         conn.executescript(schema)
+        # Migrate: add triple-barrier columns if missing
+        self._migrate_tb_columns(conn)
         conn.close()
+
+    def _migrate_tb_columns(self, conn):
+        """Add triple-barrier columns to trade_features if they don't exist."""
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(trade_features)")
+        existing = {row[1] for row in cursor.fetchall()}
+        tb_cols = {
+            'tb_label': 'INTEGER',
+            'tb_hours_to_barrier': 'REAL',
+            'tb_barrier_hit': 'TEXT',
+            'tb_upper_barrier': 'REAL',
+            'tb_lower_barrier': 'REAL',
+            'tb_return_pct': 'REAL',
+        }
+        for col, col_type in tb_cols.items():
+            if col not in existing:
+                try:
+                    cursor.execute(f"ALTER TABLE trade_features ADD COLUMN {col} {col_type}")
+                except sqlite3.OperationalError:
+                    pass
+        conn.commit()
 
     def get_connection(self):
         conn = sqlite3.connect(self.db_path)
@@ -646,6 +669,69 @@ class SQLiteStore:
         return {
             'total_vetoes': total,
             'by_agent': by_agent,
+        }
+
+    # --- Triple-Barrier Labels -------------------------------------------------
+
+    def update_trade_barrier_label(self, trade_id: str, tb_data: dict) -> None:
+        """Update triple-barrier label fields for a trade feature record."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE trade_features
+            SET tb_label = ?, tb_hours_to_barrier = ?, tb_barrier_hit = ?,
+                tb_upper_barrier = ?, tb_lower_barrier = ?, tb_return_pct = ?
+            WHERE trade_id = ?
+        """, (
+            tb_data.get('tb_label'),
+            tb_data.get('tb_hours_to_barrier'),
+            tb_data.get('tb_barrier_hit'),
+            tb_data.get('tb_upper_barrier'),
+            tb_data.get('tb_lower_barrier'),
+            tb_data.get('tb_return_pct'),
+            trade_id
+        ))
+        conn.commit()
+        conn.close()
+
+    def get_triple_barrier_stats(self) -> dict:
+        """Get aggregate triple-barrier labeling statistics."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_labeled,
+                SUM(CASE WHEN tb_label = 1 THEN 1 ELSE 0 END) as upper_hits,
+                SUM(CASE WHEN tb_label = -1 THEN 1 ELSE 0 END) as lower_hits,
+                SUM(CASE WHEN tb_label = 0 THEN 1 ELSE 0 END) as time_hits,
+                AVG(CASE WHEN tb_barrier_hit = 'upper' THEN tb_hours_to_barrier END) as avg_hours_to_tp,
+                AVG(CASE WHEN tb_barrier_hit = 'lower' THEN tb_hours_to_barrier END) as avg_hours_to_sl,
+                MIN(CASE WHEN tb_barrier_hit = 'upper' THEN tb_hours_to_barrier END) as fastest_win_hours
+            FROM trade_features
+            WHERE tb_label IS NOT NULL
+        """)
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row or not row['total_labeled']:
+            return {
+                'total_labeled': 0, 'upper_hits': 0, 'lower_hits': 0,
+                'time_hits': 0, 'upper_hit_pct': 0, 'avg_hours_to_tp': 0,
+                'avg_hours_to_sl': 0, 'fastest_win_hours': 0, 'labels_ready': False
+            }
+
+        total = row['total_labeled']
+        upper = row['upper_hits'] or 0
+        return {
+            'total_labeled': total,
+            'upper_hits': upper,
+            'lower_hits': row['lower_hits'] or 0,
+            'time_hits': row['time_hits'] or 0,
+            'upper_hit_pct': round(upper / total * 100, 1) if total > 0 else 0,
+            'avg_hours_to_tp': round(row['avg_hours_to_tp'] or 0, 1),
+            'avg_hours_to_sl': round(row['avg_hours_to_sl'] or 0, 1),
+            'fastest_win_hours': round(row['fastest_win_hours'] or 0, 1),
+            'labels_ready': total >= 30
         }
 
     def get_training_data_count(self) -> int:

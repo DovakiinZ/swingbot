@@ -56,8 +56,17 @@ class SwingbotModel:
     def train(self, df: pd.DataFrame) -> dict:
         """
         Train Random Forest on historical trade data.
-        df must have FEATURE_COLUMNS + 'outcome' column.
-        Returns training metrics dict.
+
+        Uses 'tb_label' column if available (preferred -- Triple-Barrier).
+        Falls back to 'outcome' column for backward compatibility.
+
+        Triple-barrier approach:
+          +1 -> positive (strong win -- hit TP on time)
+           0 -> negative (skip -- capital tied up)
+          -1 -> negative (skip -- loss)
+
+        This means the model learns to only recommend trades
+        that hit TP before time runs out -- the highest quality setups.
         """
         try:
             from sklearn.ensemble import RandomForestClassifier
@@ -67,9 +76,28 @@ class SwingbotModel:
             if len(df) < MIN_TRAINING_SAMPLES:
                 return {'error': f'Need {MIN_TRAINING_SAMPLES} samples, have {len(df)}'}
 
-            # Prepare data
+            # Use triple-barrier labels if available
+            if 'tb_label' in df.columns and df['tb_label'].notna().sum() >= 30:
+                # Convert triple labels to binary:
+                # +1 = 1 (strong win -- hit TP on time)
+                # 0 and -1 = 0 (avoid -- either loss or time wasted)
+                y = (df['tb_label'] == 1).astype(int)
+                label_source = "triple_barrier"
+                logger.warning("[ML] Training with Triple-Barrier labels")
+            else:
+                y = df['outcome'].astype(int)
+                label_source = "binary_outcome"
+                logger.warning("[ML] Training with binary labels (no TB data yet)")
+
+            # Prepare features
             X = df[FEATURE_COLUMNS].fillna(0)
-            y = df['outcome'].astype(int)
+
+            # Add time-based features that TB makes relevant
+            if 'tb_hours_to_barrier' in df.columns:
+                X = X.copy()
+                X['hours_to_barrier'] = df['tb_hours_to_barrier'].fillna(48)
+                X['hit_tp_fast'] = ((df['tb_barrier_hit'] == 'upper') &
+                                    (df['tb_hours_to_barrier'] < 12)).astype(int)
 
             # Random Forest -- 200 trees, sqrt features per tree
             n_features_sqrt = int(np.sqrt(len(FEATURE_COLUMNS)))
@@ -109,7 +137,8 @@ class SwingbotModel:
                 'win_rate': float(y.mean()),
                 'cv_auc_mean': float(cv_scores.mean()),
                 'cv_auc_std': float(cv_scores.std()),
-                'top_features': top_features
+                'top_features': top_features,
+                'label_source': label_source
             }
             logger.warning(f"[ML] Model trained: {metrics}")
             return metrics
