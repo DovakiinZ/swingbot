@@ -437,7 +437,126 @@ def create_app(store=None, state=None, config: dict = None):
             return jsonify({"success": True, "report": result})
         return jsonify({"success": False, "error": "No trades found this week"}), 404
 
-    # ── Settings APIs ──────────────────────────────────────────────────
+    # ── Unified Settings APIs (Dashboard Control) ────────────────────
+
+    @app.route("/api/settings/load", methods=["GET"])
+    @login_required
+    def api_settings_load():
+        """Return the complete config.yaml as JSON for dashboard population."""
+        cfg = _load_config()
+        env = _read_env()
+
+        def mask(val):
+            if not val or val in ('', 'your_api_key_here', 'your_api_secret_here'):
+                return ''
+            if len(val) > 8:
+                return val[:4] + '...' + val[-4:]
+            return '****'
+
+        # Inject exchange connection status (keys masked)
+        cfg['_exchange_keys'] = {
+            'mexc_key': mask(env.get('MEXC_API_KEY', '')),
+            'mexc_secret_set': bool(env.get('MEXC_API_SECRET', '')),
+            'bybit_key': mask(env.get('BYBIT_API_KEY', '')),
+            'bybit_secret_set': bool(env.get('BYBIT_API_SECRET', '')),
+            'binance_key': mask(env.get('BINANCE_API_KEY', '')),
+            'binance_secret_set': bool(env.get('BINANCE_API_SECRET', '')),
+        }
+        cfg['_trading_mode'] = env.get('TRADING_MODE', 'paper')
+        cfg['_live_ok_file'] = LIVE_OK_PATH.exists()
+        return jsonify(cfg)
+
+    @app.route("/api/settings/save", methods=["POST"])
+    @login_required
+    def api_settings_save():
+        """
+        Save any subset of config keys. Supports dot notation for nested keys.
+        Deep-merges with existing config.yaml. Bot picks up changes next cycle.
+        API keys are saved to .env, not config.yaml.
+        """
+        import yaml
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data"}), 400
+
+        try:
+            cfg = _load_config()
+
+            # Separate API key updates (go to .env, not config.yaml)
+            env_updates = {}
+            env_keys = {
+                'mexc_api_key': 'MEXC_API_KEY',
+                'mexc_api_secret': 'MEXC_API_SECRET',
+                'bybit_api_key': 'BYBIT_API_KEY',
+                'bybit_api_secret': 'BYBIT_API_SECRET',
+                'binance_api_key': 'BINANCE_API_KEY',
+                'binance_api_secret': 'BINANCE_API_SECRET',
+            }
+
+            config_data = {}
+            for key, value in data.items():
+                lower_key = key.lower()
+                if lower_key in env_keys:
+                    env_updates[env_keys[lower_key]] = value
+                    os.environ[env_keys[lower_key]] = value
+                elif key == 'trading_mode':
+                    # trading_mode goes to both config AND .env
+                    config_data[key] = value
+                    env_updates['TRADING_MODE'] = value
+                    os.environ['TRADING_MODE'] = value
+                    # Handle live flag + LIVE_OK file
+                    if value == 'live':
+                        config_data['live'] = True
+                        LIVE_OK_PATH.write_text("Enabled from dashboard\n", encoding="utf-8")
+                    else:
+                        config_data['live'] = False
+                        if LIVE_OK_PATH.exists():
+                            LIVE_OK_PATH.unlink()
+                else:
+                    config_data[key] = value
+
+            # Deep merge config changes using dot notation
+            def set_nested(d, key_path, val):
+                keys = key_path.split(".")
+                for k in keys[:-1]:
+                    d = d.setdefault(k, {})
+                d[keys[-1]] = val
+
+            for key, value in config_data.items():
+                if "." in key:
+                    set_nested(cfg, key, value)
+                else:
+                    cfg[key] = value
+
+            # Validate critical constraints
+            if cfg.get('risk_per_trade_percent', 3) > 10:
+                cfg['risk_per_trade_percent'] = 10
+            if cfg.get('min_score', 65) < 0:
+                cfg['min_score'] = 0
+            if cfg.get('min_score', 65) > 100:
+                cfg['min_score'] = 100
+
+            _save_config(cfg)
+
+            # Save .env updates
+            if env_updates:
+                env = _read_env()
+                env.update(env_updates)
+                _write_env(env)
+
+            # Reload notifier config if available
+            notifier = app.config.get('notifier')
+            if notifier:
+                notifier.config = cfg
+                notifier.notif_config = cfg.get('notifications', {})
+
+            return jsonify({"success": True, "saved": list(data.keys())})
+
+        except Exception as e:
+            logger.error(f"[Settings] Save failed: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    # ── Legacy Settings APIs (kept for compatibility) ─────────────────
 
     @app.route("/api/settings", methods=["GET"])
     @login_required
@@ -940,5 +1059,138 @@ def create_app(store=None, state=None, config: dict = None):
             'agent_accuracy': agent_accuracy,
             'veto_stats': veto_stats,
         })
+
+    # ── AI Chatbot API ─────────────────────────────────────────────────
+
+    @app.route("/api/chat", methods=["POST"])
+    @login_required
+    def api_chat():
+        """AI chatbot powered by Claude. Reads live bot state and answers questions."""
+        import requests as req
+
+        data = request.get_json()
+        message = (data or {}).get('message', '').strip()
+        history = (data or {}).get('history', [])
+
+        if not message:
+            return jsonify({"response": "No message provided", "error": True}), 400
+
+        # Build bot context
+        cfg = _load_config()
+        bot_state = state.snapshot() if hasattr(state, 'snapshot') else (state or {})
+
+        # Recent log lines
+        log_lines = []
+        try:
+            log_file = PROJECT_ROOT / 'logs' / f"swingbot_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.log"
+            if log_file.exists():
+                lines = log_file.read_text(encoding='utf-8', errors='ignore').splitlines()
+                log_lines = [l.strip() for l in lines[-30:] if l.strip()]
+        except Exception:
+            pass
+
+        # Format scan results
+        scan_lines = []
+        for s in bot_state.get('scan_results', [])[:5]:
+            sym = s.get('symbol', '?')
+            score = s.get('score', 0)
+            sig = s.get('signal', 'NONE')
+            scan_lines.append(f"- {sym}: score={score:.0f}, signal={sig}")
+
+        # Format positions
+        pos_lines = []
+        for p in bot_state.get('positions_summary', []):
+            sym = p.get('symbol', '?')
+            side = p.get('side', '?')
+            entry = p.get('entry_price', 0)
+            pnl = p.get('unrealized_pnl', 0)
+            pos_lines.append(f"- {sym} {side} @ ${entry:.4f} | P&L: ${pnl:.2f}")
+
+        cm = bot_state.get('conservative_mode', {})
+        if isinstance(cm, dict):
+            cm_active = cm.get('active', False)
+        else:
+            cm_active = False
+
+        system_prompt = (
+            "You are Swingbot's AI assistant — a helpful trading bot advisor.\n"
+            "You have access to the bot's live state and recent activity.\n"
+            "Answer questions about what the bot is doing, why it made decisions, and how it works.\n"
+            "Be conversational, clear, and friendly.\n"
+            "If the user writes in Arabic, respond FULLY in Arabic.\n"
+            "If the user writes in English, respond in English.\n"
+            "Keep responses concise — 2-4 sentences max unless more detail is needed.\n"
+            "Never make up data — only use what's provided in the context.\n\n"
+            f"CURRENT BOT STATE:\n"
+            f"- Mode: {cfg.get('trading_mode', 'paper').upper()}\n"
+            f"- Exchange: {cfg.get('primary_exchange', 'mexc').upper()}\n"
+            f"- Balance: ${bot_state.get('total_balance', 0):.2f} USDT\n"
+            f"- Open Positions: {bot_state.get('open_positions_count', 0)}\n"
+            f"- Day P&L: ${bot_state.get('daily_pnl', 0):.2f}\n"
+            f"- Last Scan: {bot_state.get('last_cycle', 'unknown')}\n"
+            f"- Circuit Breaker: {bot_state.get('breaker_status', 'OK')}\n"
+            f"- Conservative Mode: {cm_active}\n"
+            f"- Scan Interval: {cfg.get('scan_interval_minutes', 10)} minutes\n"
+            f"- Min Score: {cfg.get('min_score', 65)}\n"
+            f"- Risk Per Trade: {cfg.get('risk_per_trade_percent', 3)}%\n"
+            f"- Max Positions: {cfg.get('max_open_positions', 3)}\n"
+            f"- Sentiment Threshold: {cfg.get('sentiment_threshold', 20)}\n"
+            f"- Short Selling: {cfg.get('allow_short', False)}\n"
+            f"- Scanner Enabled: {cfg.get('scanner', {}).get('enabled', False)}\n\n"
+            f"TOP SCAN RESULTS (last cycle):\n"
+            f"{chr(10).join(scan_lines) or 'No scan results yet'}\n\n"
+            f"OPEN POSITIONS:\n"
+            f"{chr(10).join(pos_lines) or 'No open positions'}\n\n"
+            f"RECENT LOG (last 20 lines):\n"
+            f"{chr(10).join(log_lines[-20:]) or 'No logs available'}"
+        )
+
+        # Build messages
+        messages = []
+        for msg in history[-10:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": message})
+
+        # Call Claude API
+        api_key = os.getenv('ANTHROPIC_API_KEY', '')
+        if not api_key:
+            return jsonify({
+                "response": "ANTHROPIC_API_KEY not set. Add it to your .env file to enable the AI chatbot.\nGet a key from console.anthropic.com",
+                "error": True
+            })
+
+        try:
+            response = req.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 500,
+                    "system": system_prompt,
+                    "messages": messages,
+                },
+                timeout=30,
+            )
+
+            if response.ok:
+                result = response.json()
+                reply = result['content'][0]['text']
+                return jsonify({"response": reply, "error": False})
+            else:
+                return jsonify({
+                    "response": f"API error: {response.status_code} — {response.text[:200]}",
+                    "error": True
+                })
+
+        except Exception as e:
+            logger.error(f"[Chat] Claude API error: {e}")
+            return jsonify({
+                "response": f"Connection error: {str(e)}",
+                "error": True
+            })
 
     return app
