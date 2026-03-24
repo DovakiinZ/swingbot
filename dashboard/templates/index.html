@@ -314,6 +314,7 @@ body { padding-bottom: 70px; }
   </div>
   <div class="card">
     <div class="status-row"><span class="status-label">⚡ Circuit Breaker</span><span class="status-value status-ok" id="sBreaker">OK</span></div>
+    <div class="status-row"><span class="status-label">🎯 Sniper Mode</span><span class="status-value" id="sSniper" style="color:#888">OFF</span></div>
     <div class="status-row"><span class="status-label">🛡 وضع المحافظة</span><span class="status-value status-ok" id="sConservative">إيقاف</span></div>
     <div class="status-row"><span class="status-label">📊 Macro Scale</span><span class="status-value" id="sMacro">1.00</span></div>
     <div class="status-row"><span class="status-label">😐 المشاعر</span><span class="status-value" id="sSentiment">محايد</span></div>
@@ -473,6 +474,13 @@ body { padding-bottom: 70px; }
   <details class="settings-section">
     <summary class="settings-title">🎯 Signal Quality</summary>
     <div style="padding-top:8px">
+      <div class="toggle-row" style="background:rgba(255,71,87,0.08);border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid rgba(255,71,87,0.2)">
+        <div>
+          <span class="toggle-label" style="font-weight:700;color:#ffd700">Sniper Mode</span>
+          <div style="font-size:11px;color:#888;margin-top:2px">Bypass macro/sentiment filters. Only 85+ score setups.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="setSniperMode" onchange="onSniperToggle(this.checked)"><span class="slider"></span></label>
+      </div>
       <div class="field-group">
         <label class="field-label">Minimum Score: <span id="minScoreVal" style="color:var(--green);font-weight:700">65</span></label>
         <input type="range" id="setMinScore" min="0" max="100" value="65" step="5"
@@ -1001,6 +1009,17 @@ async function loadStatus() {
   bkEl.textContent = bk === 'OK' ? 'OK' : bk;
   bkEl.className = 'status-value ' + (bk === 'OK' ? 'status-ok' : 'status-bad');
 
+  const sniperEl = document.getElementById('sSniper');
+  if (d.sniper_mode) {
+    sniperEl.textContent = 'ACTIVE';
+    sniperEl.style.color = '#ffd700';
+    sniperEl.style.fontWeight = '700';
+  } else {
+    sniperEl.textContent = 'OFF';
+    sniperEl.style.color = '#888';
+    sniperEl.style.fontWeight = '400';
+  }
+
   const cm = d.conservative_mode || {};
   const cmEl = document.getElementById('sConservative');
   cmEl.textContent = cm.active ? cm.reason : 'إيقاف';
@@ -1322,6 +1341,8 @@ async function loadSettings() {
   document.getElementById('setMinVolume').value = c.min_volume_usdt || 10000000;
 
   // GROUP 3: Signal Quality
+  const isSniper = c.strategy_mode === 'sniper';
+  document.getElementById('setSniperMode').checked = isSniper;
   const minScore = c.min_score || 65;
   document.getElementById('setMinScore').value = minScore;
   document.getElementById('minScoreVal').textContent = minScore;
@@ -1507,8 +1528,17 @@ async function saveScanSettings() {
   });
 }
 
+function onSniperToggle(on) {
+  if (on) {
+    document.getElementById('setMinScore').value = 85;
+    document.getElementById('minScoreVal').textContent = '85';
+  }
+}
+
 async function saveSignalSettings() {
+  const sniperOn = document.getElementById('setSniperMode').checked;
   await saveSettings({
+    strategy_mode: sniperOn ? 'sniper' : 'normal',
     min_score: parseInt(document.getElementById('setMinScore').value),
     min_rr_ratio: parseFloat(document.getElementById('setMinRR').textContent),
     allow_short: document.getElementById('setShort').checked,

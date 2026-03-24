@@ -76,20 +76,32 @@ def _passes_entry_checklist(
     sentiment_ok: bool,
     score: float,
     signal,
-    circuit_breaker_ok: bool
+    circuit_breaker_ok: bool,
+    sniper_mode: bool = False
 ) -> tuple:
     """
     Pre-flight checklist before any entry order.
     All conditions must pass. Returns (passed, reason_if_failed).
+
+    Sniper mode: bypasses macro/sentiment gates but keeps circuit breakers,
+    score gate (85+), and R:R check active. Only perfect setups get through.
     """
+    # Circuit breakers ALWAYS active -- even in sniper mode
     if not circuit_breaker_ok:
         return False, "Circuit breaker tripped"
-    if macro_scale < 0.5:
-        return False, f"Macro risk too high (scale={macro_scale:.2f})"
-    if not sentiment_ok:
-        return False, "Extreme fear -- sentiment gate blocked"
-    if score < CONFIG.get('min_score', 65):
-        return False, f"Score too low ({score:.0f} < {CONFIG.get('min_score', 65)})"
+
+    if sniper_mode:
+        # Sniper: skip macro and sentiment, trust the setup
+        pass
+    else:
+        if macro_scale < 0.5:
+            return False, f"Macro risk too high (scale={macro_scale:.2f})"
+        if not sentiment_ok:
+            return False, "Extreme fear -- sentiment gate blocked"
+
+    min_score = CONFIG.get('min_score', 65)
+    if score < min_score:
+        return False, f"Score too low ({score:.0f} < {min_score})"
     if signal is None:
         return False, "No signal generated"
     if signal.stop_loss and signal.price:
@@ -186,6 +198,8 @@ def main():
     parser.add_argument("--symbol", type=str, default=None,
                         help="Force a single trading pair (skips auto-scan)")
     parser.add_argument("--lang",   type=str, help="Language (en, ar)")
+    parser.add_argument("--sniper", action="store_true",
+                        help="Sniper mode: ignore macro/sentiment, only trade 85+ score setups")
     parser.add_argument("--guide",  action="store_true",
                         help="Show bilingual help menu")
     args = parser.parse_args()
@@ -211,6 +225,14 @@ def main():
         CONFIG['scan_interval_minutes'] = 2
     elif args.interval:
         CONFIG['scan_interval_minutes'] = args.interval
+
+    # Sniper mode: bypass macro/sentiment, only trade 85+ score setups
+    if args.sniper:
+        CONFIG['strategy_mode'] = 'sniper'
+        CONFIG['min_score'] = 85
+        logger.warning("[SNIPER] Mode activated -- macro/sentiment bypassed, min_score=85")
+
+    SNIPER_MODE = CONFIG.get('strategy_mode', 'normal') == 'sniper'
 
     scan_interval_sec = CONFIG.get('scan_interval_minutes', 10) * 60
 
@@ -447,6 +469,10 @@ def main():
         except Exception:
             pass
 
+        # Re-check sniper mode from config (dashboard toggle)
+        nonlocal SNIPER_MODE
+        SNIPER_MODE = CONFIG.get('strategy_mode', 'normal') == 'sniper'
+
         status = {
             "signal": None,
             "pos_state": "FLAT",
@@ -558,6 +584,7 @@ def main():
                 logger.warning("[SENTIMENT] Extreme fear detected -- no new entries this cycle.")
 
             dashboard_state['sentiment_ok'] = sentiment_ok
+            dashboard_state['sniper_mode'] = SNIPER_MODE
             dashboard_state['breaker_status'] = status['breaker']
 
             # -- Get all open positions ----------------------------------------
@@ -824,7 +851,8 @@ def main():
                     sentiment_ok=sentiment_ok,
                     score=cand_score,
                     signal=sig,
-                    circuit_breaker_ok=circuit_breaker_ok
+                    circuit_breaker_ok=circuit_breaker_ok,
+                    sniper_mode=SNIPER_MODE
                 )
                 if not passed:
                     logger.warning(f"[SKIP] {sym}: {reason}")
@@ -849,11 +877,14 @@ def main():
 
                 dashboard_state['ai_confidence'] = confidence
 
-                # Dump BTC risk factor
-                btc_factor = get_btc_risk_factor_for_symbol(sym, status, CONFIG)
-                if btc_factor <= 0:
-                    logger.info(f"Dump BTC blocked entry for {sym}")
-                    continue
+                # Dump BTC risk factor (bypassed in sniper mode)
+                if SNIPER_MODE:
+                    btc_factor = 1.0
+                else:
+                    btc_factor = get_btc_risk_factor_for_symbol(sym, status, CONFIG)
+                    if btc_factor <= 0:
+                        logger.info(f"Dump BTC blocked entry for {sym}")
+                        continue
 
                 # Reserved capital
                 reserved = sum(p.entry_price * p.amount for p in open_positions)
@@ -871,7 +902,8 @@ def main():
                 base_size = risk_engine.calculate_position_size(
                     sig, reserved_capital=reserved, dynamic_risk_pct=dynamic_risk
                 )
-                size = base_size * status.get('risk_scale', 1.0) * btc_factor * (risk_mult if conservative else 1.0)
+                risk_scale = 1.0 if SNIPER_MODE else status.get('risk_scale', 1.0)
+                size = base_size * risk_scale * btc_factor * (risk_mult if conservative else 1.0)
 
                 # Breakout size multiplier
                 if breakout_detected:

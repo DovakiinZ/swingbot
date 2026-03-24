@@ -256,6 +256,7 @@ def create_app(store=None, state=None, config: dict = None):
             'conservative_mode': cm_status,
             'sentiment_ok': snapshot.get('sentiment_ok', True),
             'macro_scale': snapshot.get('macro_scale', 1.0),
+            'sniper_mode': snapshot.get('sniper_mode', False),
             'ai_confidence': snapshot.get('ai_confidence'),
             'next_scan_seconds': next_scan,
             'trading_hours_ok': trading_hours_ok,
