@@ -80,9 +80,9 @@ BYBIT_API_SECRET=
 DASHBOARD_PASSWORD=swingbot123
 FLASK_SECRET_KEY={flask_key}
 
-# ── AI Chatbot ────────────────────────────────────────────────────────────────
-# Get from: console.anthropic.com
-ANTHROPIC_API_KEY=
+# ── AI Chatbot (Groq) ─────────────────────────────────────────────────────────
+# Get from: console.groq.com
+GROQ_API_KEY=
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK_GENERAL=

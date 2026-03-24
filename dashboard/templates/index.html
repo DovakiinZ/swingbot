@@ -314,7 +314,7 @@ body { padding-bottom: 70px; }
   </div>
   <div class="card">
     <div class="status-row"><span class="status-label">⚡ Circuit Breaker</span><span class="status-value status-ok" id="sBreaker">OK</span></div>
-    <div class="status-row"><span class="status-label">🎯 Sniper Mode</span><span class="status-value" id="sSniper" style="color:#888">OFF</span></div>
+    <div class="status-row"><span class="status-label">🎯 Sniper Mode</span><span class="status-value" style="display:flex;align-items:center;gap:8px"><span id="sSniper" style="color:#888">OFF</span><label class="toggle" style="margin:0"><input type="checkbox" id="sSniperToggle" onchange="toggleSniperFromHome(this.checked)"><span class="slider"></span></label></span></div>
     <div class="status-row"><span class="status-label">🛡 وضع المحافظة</span><span class="status-value status-ok" id="sConservative">إيقاف</span></div>
     <div class="status-row"><span class="status-label">📊 Macro Scale</span><span class="status-value" id="sMacro">1.00</span></div>
     <div class="status-row"><span class="status-label">😐 المشاعر</span><span class="status-value" id="sSentiment">محايد</span></div>
@@ -1010,14 +1010,17 @@ async function loadStatus() {
   bkEl.className = 'status-value ' + (bk === 'OK' ? 'status-ok' : 'status-bad');
 
   const sniperEl = document.getElementById('sSniper');
+  const sniperToggle = document.getElementById('sSniperToggle');
   if (d.sniper_mode) {
     sniperEl.textContent = 'ACTIVE';
     sniperEl.style.color = '#ffd700';
     sniperEl.style.fontWeight = '700';
+    sniperToggle.checked = true;
   } else {
     sniperEl.textContent = 'OFF';
     sniperEl.style.color = '#888';
     sniperEl.style.fontWeight = '400';
+    sniperToggle.checked = false;
   }
 
   const cm = d.conservative_mode || {};
@@ -1533,6 +1536,25 @@ function onSniperToggle(on) {
     document.getElementById('setMinScore').value = 85;
     document.getElementById('minScoreVal').textContent = '85';
   }
+}
+
+async function toggleSniperFromHome(on) {
+  await saveSettings({
+    strategy_mode: on ? 'sniper' : 'normal',
+    min_score: on ? 85 : 65,
+  });
+  // Sync the settings tab toggle too
+  const settingsToggle = document.getElementById('setSniperMode');
+  if (settingsToggle) settingsToggle.checked = on;
+  if (on) {
+    document.getElementById('setMinScore').value = 85;
+    document.getElementById('minScoreVal').textContent = '85';
+  }
+  // Update status label immediately
+  const sniperEl = document.getElementById('sSniper');
+  sniperEl.textContent = on ? 'ACTIVE' : 'OFF';
+  sniperEl.style.color = on ? '#ffd700' : '#888';
+  sniperEl.style.fontWeight = on ? '700' : '400';
 }
 
 async function saveSignalSettings() {

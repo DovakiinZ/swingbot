@@ -1066,7 +1066,7 @@ def create_app(store=None, state=None, config: dict = None):
     @app.route("/api/chat", methods=["POST"])
     @login_required
     def api_chat():
-        """AI chatbot powered by Claude. Reads live bot state and answers questions."""
+        """AI chatbot powered by Groq. Reads live bot state and answers questions."""
         import requests as req
 
         data = request.get_json()
@@ -1152,34 +1152,35 @@ def create_app(store=None, state=None, config: dict = None):
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": message})
 
-        # Call Claude API
-        api_key = os.getenv('ANTHROPIC_API_KEY', '')
+        # Call Groq API
+        api_key = os.getenv('GROQ_API_KEY', '')
         if not api_key:
             return jsonify({
-                "response": "ANTHROPIC_API_KEY not set. Add it to your .env file to enable the AI chatbot.\nGet a key from console.anthropic.com",
+                "response": "GROQ_API_KEY not set. Add it to your .env file to enable the AI chatbot.\nGet a key from console.groq.com",
                 "error": True
             })
 
         try:
+            # Groq uses OpenAI-compatible format — system message goes in messages array
+            groq_messages = [{"role": "system", "content": system_prompt}] + messages
+
             response = req.post(
-                "https://api.anthropic.com/v1/messages",
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
+                    "Authorization": f"Bearer {api_key}",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "llama-3.3-70b-versatile",
                     "max_tokens": 500,
-                    "system": system_prompt,
-                    "messages": messages,
+                    "messages": groq_messages,
                 },
                 timeout=30,
             )
 
             if response.ok:
                 result = response.json()
-                reply = result['content'][0]['text']
+                reply = result['choices'][0]['message']['content']
                 return jsonify({"response": reply, "error": False})
             else:
                 return jsonify({
@@ -1188,7 +1189,7 @@ def create_app(store=None, state=None, config: dict = None):
                 })
 
         except Exception as e:
-            logger.error(f"[Chat] Claude API error: {e}")
+            logger.error(f"[Chat] Groq API error: {e}")
             return jsonify({
                 "response": f"Connection error: {str(e)}",
                 "error": True
