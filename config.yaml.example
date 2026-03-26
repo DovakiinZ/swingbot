@@ -1,0 +1,81 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# SWINGBOT CONFIGURATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Exchange & Mode ───────────────────────────────────────────────────────────
+primary_exchange: bybit          # 'bybit' (recommended) or 'binance'
+bybit_account_type: spot         # 'spot' or 'linear' (futures)
+trading_mode: paper
+
+# ── Scan Speed ────────────────────────────────────────────────────────────────
+scan_interval_minutes: 10        # How often to scan (minutes)
+
+# ── Strategy & Scanning ──────────────────────────────────────────────────────
+timeframe: "1h"
+lookback: 100
+scan_top_n: 20
+scanner:
+  enabled: false
+  breakout_lookback: 20
+  btc_correlation_factor: 0.7
+
+# ── Signal Quality Gates ─────────────────────────────────────────────────────
+allow_short: true                # Enable short/sell entries
+min_score: 65                    # Minimum scanner score (was 55)
+min_rr_ratio: 2.0                # Minimum Risk:Reward ratio
+
+# ── Risk Management ──────────────────────────────────────────────────────────
+risk_per_trade_percent: 1.0
+max_open_positions: 1
+max_portfolio_risk_percent: 5.0
+max_single_position_percent: 30.0
+daily_loss_limit_percent: 2.0
+consecutive_loss_limit: 3
+api_failure_limit: 2
+
+# ── Compounding Plan ($100 -> $1000) ─────────────────────────────────────────
+base_balance: 100.0              # Starting capital reference
+peak_balance_tracking: true      # Track peak for drawdown calculation
+drawdown_reset_threshold: 0.20   # Reset to Phase 1 if drawdown > 20%
+
+# ── Breakout Detection ───────────────────────────────────────────────────────
+breakout_lookback: 20            # Candles to look back
+breakout_volume_mult: 2.0        # Min volume surge multiplier
+breakout_compression_atr: 2.0    # Max ATR% during consolidation
+
+# ── Database ─────────────────────────────────────────────────────────────────
+db_path: "swingbot.db"
+
+# ── Paper Trading ────────────────────────────────────────────────────────────
+paper_start_balance_usdt: 1000.0
+
+# ── Sentiment Gate ───────────────────────────────────────────────────────────
+sentiment_threshold: 20          # Fear & Greed threshold
+
+# ── Volume Filter ────────────────────────────────────────────────────────────
+min_volume_usdt: 10000000
+
+# ── Polymarket (Macro Filter) ────────────────────────────────────────────────
+polymarket:
+  enabled: false
+  update_hours: 6
+  markets: []
+  default_risk_scale_on_failure: 0.7
+
+# ── Multi-Armed Bandit ───────────────────────────────────────────────────────
+bandit:
+  exploration_prob: 0.2
+
+# ── Account Info ─────────────────────────────────────────────────────────────
+account_name: "Swingbot Paper"
+live: false
+show_balances_on_startup: true
+
+# ── Localization ─────────────────────────────────────────────────────────────
+lang: "en"
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+dashboard:
+  enabled: true
+  port: 8080
+  host: '0.0.0.0'

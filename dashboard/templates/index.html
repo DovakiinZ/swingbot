@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Swingbot</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #080b10;
+  --card: #121820;
+  --green: #00e5a0;
+  --red: #ff3d5a;
+  --gold: #f5c242;
+  --blue: #3d8bff;
+  --border: #1e2a38;
+  --text: #e8eaed;
+  --text2: #8b95a5;
+  --font: 'Tajawal', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font);
+  min-height: 100vh; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+body { padding-bottom: 70px; }
+
+/* Header */
+.header { position: sticky; top: 0; z-index: 100; background: var(--bg);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.header h1 { font-size: 18px; font-weight: 800; color: var(--green); letter-spacing: 1px; }
+.mode-badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 700; }
+.mode-paper { background: rgba(245,194,66,0.15); color: var(--gold); }
+.mode-live { background: rgba(255,61,90,0.15); color: var(--red); }
+.disconnected { display: none; background: var(--red); color: #fff; text-align: center;
+  padding: 6px; font-size: 12px; font-weight: 700; }
+.disconnected.show { display: block; }
+
+/* Tab content */
+.tab-content { display: none; padding: 16px; min-height: calc(100vh - 140px); }
+.tab-content.active { display: block; }
+
+/* Cards */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; margin-bottom: 12px; }
+
+/* Balance */
+.balance-big { text-align: center; padding: 20px 0 8px; }
+.balance-big .amount { font-size: 36px; font-weight: 800; font-family: var(--mono); color: var(--text); }
+.balance-big .day-pnl { font-size: 16px; font-weight: 600; margin-top: 4px; }
+.pnl-pos { color: var(--green); }
+.pnl-neg { color: var(--red); }
+
+/* Status rows */
+.status-row { display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid rgba(30,42,56,0.5); font-size: 14px; }
+.status-row:last-child { border-bottom: none; }
+.status-label { color: var(--text2); }
+.status-value { font-weight: 600; font-family: var(--mono); font-size: 13px; }
+.status-ok { color: var(--green); }
+.status-warn { color: var(--gold); }
+.status-bad { color: var(--red); }
+
+/* Scan results */
+.scan-title { font-size: 14px; color: var(--text2); margin: 16px 0 8px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.scan-item { display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid rgba(30,42,56,0.3); font-size: 13px; }
+.scan-item:last-child { border-bottom: none; }
+.scan-sym { font-weight: 700; min-width: 90px; }
+.scan-score { font-family: var(--mono); min-width: 30px; }
+.scan-bar { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+.scan-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+.scan-signal { font-size: 12px; font-weight: 700; min-width: 50px; text-align: left; }
+.signal-buy { color: var(--green); }
+.signal-hold { color: var(--text2); }
+
+/* Positions */
+.pos-card { border-right: 4px solid var(--green); }
+.pos-card.losing { border-right-color: var(--red); }
+.pos-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.pos-symbol { font-size: 16px; font-weight: 800; }
+.pos-side { font-size: 12px; padding: 3px 8px; border-radius: 6px; font-weight: 700; }
+.pos-long { background: rgba(0,229,160,0.15); color: var(--green); }
+.pos-short { background: rgba(255,61,90,0.15); color: var(--red); }
+.pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pos-field { font-size: 12px; }
+.pos-field-label { color: var(--text2); display: block; margin-bottom: 2px; }
+.pos-field-value { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text2); font-size: 15px; }
+
+/* History */
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+.stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; text-align: center; }
+.stat-value { font-size: 20px; font-weight: 800; font-family: var(--mono); }
+.stat-label { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.streak { text-align: center; padding: 8px; margin-bottom: 12px; font-size: 14px;
+  font-weight: 700; border-radius: 10px; }
+.streak-win { background: rgba(0,229,160,0.1); color: var(--green); }
+.streak-loss { background: rgba(255,61,90,0.1); color: var(--red); }
+.trade-item { display: flex; align-items: center; gap: 8px; padding: 10px 0;
+  border-bottom: 1px solid rgba(30,42,56,0.3); font-size: 13px; }
+.trade-icon { font-size: 16px; }
+.trade-sym { font-weight: 700; min-width: 85px; }
+.trade-side { font-size: 11px; color: var(--text2); min-width: 45px; }
+.trade-pnl { font-family: var(--mono); font-weight: 600; flex: 1; text-align: left; }
+.trade-reason { font-size: 11px; color: var(--text2); }
+.chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 12px; margin-bottom: 12px; height: 200px; }
+
+/* Reports */
+.report-card { margin-bottom: 12px; }
+.report-actions { display: flex; gap: 8px; margin-top: 12px; }
+.btn { padding: 10px 16px; border: none; border-radius: 10px; font-family: var(--font);
+  font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-primary { background: var(--green); color: var(--bg); }
+.btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.btn:active { opacity: 0.7; }
+.weeks-list .week-row { display: flex; justify-content: space-between; padding: 10px 0;
+  border-bottom: 1px solid rgba(30,42,56,0.3); font-size: 13px; }
+
+/* Settings */
+.settings-section { margin-bottom: 16px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; }
+.settings-section > summary { list-style: none; cursor: pointer; }
+.settings-section > summary::-webkit-details-marker { display: none; }
+.settings-section > summary::after { content: '▼'; float: right; font-size: 10px; color: var(--text2);
+  transition: transform 0.2s; }
+.settings-section[open] > summary::after { transform: rotate(180deg); }
+.settings-section > div { padding: 0 16px 16px; }
+.settings-title { font-size: 15px; font-weight: 700; color: var(--gold);
+  padding: 14px 16px; margin: 0; border-bottom: none; }
+.hours-btn { width: 100%; padding: 8px 0; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: var(--mono); text-align: center; }
+.hours-btn.active { background: rgba(255,61,90,0.15); border-color: var(--red); color: var(--red); }
+.field-group { margin-bottom: 12px; }
+.field-label { font-size: 12px; color: var(--text2); margin-bottom: 4px; display: block; }
+.field-input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 14px; font-family: var(--mono); }
+.field-input:focus { outline: none; border-color: var(--green); }
+.field-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.field-row .btn { flex: 1; }
+.toggle-row { display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid rgba(30,42,56,0.3); }
+.toggle-label { font-size: 14px; }
+.toggle { position: relative; width: 44px; height: 24px; cursor: pointer; }
+.toggle input { display: none; }
+.toggle .slider { position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: #2a3444; border-radius: 24px; transition: 0.3s; }
+.toggle .slider::before { content: ''; position: absolute; width: 18px; height: 18px;
+  left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+.toggle input:checked + .slider { background: var(--green); }
+.toggle input:checked + .slider::before { transform: translateX(20px); }
+.stepper { display: flex; align-items: center; gap: 12px; }
+.stepper button { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text); font-size: 18px; cursor: pointer; font-weight: 700; }
+.stepper button:active { background: var(--green); color: var(--bg); }
+.stepper .val { font-family: var(--mono); font-size: 18px; font-weight: 700; min-width: 40px;
+  text-align: center; }
+.connection-status { font-size: 12px; padding: 6px 10px; border-radius: 8px; margin-top: 8px;
+  display: inline-block; }
+.conn-ok { background: rgba(0,229,160,0.1); color: var(--green); }
+.conn-fail { background: rgba(255,61,90,0.1); color: var(--red); }
+.toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 999;
+  background: var(--card); border: 1px solid var(--green); color: var(--green);
+  padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  display: none; animation: fadeIn 0.3s; }
+.toast.error { border-color: var(--red); color: var(--red); }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+/* Chat */
+.chat-header { display: flex; align-items: center; gap: 12px; padding: 16px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 12px; }
+.chat-avatar { width: 44px; height: 44px; background: linear-gradient(135deg, #0e1a12, #0d1520);
+  border: 1px solid rgba(0,229,160,0.3); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.chat-name { font-size: 15px; font-weight: 700; }
+.chat-status { font-size: 11px; color: var(--green); font-family: var(--mono); margin-top: 2px; }
+.suggestions { margin-bottom: 12px; }
+.suggest-title { font-size: 11px; color: var(--text2); font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.suggest-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 7px 14px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; color: var(--text); font-size: 12px; font-family: var(--font);
+  cursor: pointer; transition: border-color 0.2s; white-space: nowrap; }
+.chip:active { border-color: var(--green); color: var(--green); }
+.chat-messages { display: flex; flex-direction: column; gap: 12px; padding: 8px 0;
+  min-height: 200px; max-height: 400px; overflow-y: auto; margin-bottom: 12px; }
+.msg { display: flex; gap: 8px; animation: fadeIn 0.2s ease; }
+.msg.user { flex-direction: row-reverse; }
+.msg.bot { flex-direction: row; }
+.msg-bubble { max-width: 80%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5; }
+.msg.user .msg-bubble { background: rgba(0,229,160,0.12); border: 1px solid rgba(0,229,160,0.2);
+  color: var(--text); border-bottom-right-radius: 4px; }
+.msg.bot .msg-bubble { background: var(--card); border: 1px solid var(--border);
+  color: var(--text); border-bottom-left-radius: 4px; }
+.msg-avatar { width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  flex-shrink: 0; margin-top: 4px; }
+.msg.bot .msg-avatar { background: var(--border); }
+.msg.user .msg-avatar { background: rgba(0,229,160,0.15); }
+.typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing-dots span { width: 6px; height: 6px; background: var(--text2);
+  border-radius: 50%; animation: bounce 1.2s infinite; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+.chat-input-wrap { display: flex; gap: 10px; position: sticky; bottom: 80px;
+  background: var(--bg); padding: 8px 0; }
+.chat-input-wrap input { flex: 1; padding: 13px 16px; background: var(--card);
+  border: 1px solid var(--border); border-radius: 14px; color: var(--text);
+  font-family: var(--font); font-size: 14px; outline: none; }
+.chat-input-wrap input:focus { border-color: var(--green); }
+.chat-send { width: 48px; height: 48px; background: var(--green); border: none;
+  border-radius: 14px; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; }
+.chat-send svg { width: 18px; height: 18px; stroke: #000; }
+.chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Bottom tabs */
+.tab-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: var(--card); border-top: 1px solid var(--border);
+  display: flex; justify-content: space-around; padding: 6px 0 env(safe-area-inset-bottom, 8px); }
+.tab-btn { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: none; border: none; color: var(--text2); font-size: 10px;
+  font-family: var(--font); padding: 6px 12px; cursor: pointer; transition: color 0.2s; }
+.tab-btn svg { width: 22px; height: 22px; fill: currentColor; }
+.tab-btn.active { color: var(--green); }
+
+/* Goal Tracker */
+.goal-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; margin-bottom: 12px; }
+.goal-title { font-size: 14px; font-weight: 700; color: var(--gold); margin-bottom: 12px; }
+.goal-amounts { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2);
+  margin-bottom: 4px; }
+.goal-bar { height: 10px; background: rgba(255,255,255,0.06); border-radius: 5px; overflow: hidden;
+  margin-bottom: 4px; }
+.goal-bar-fill { height: 100%; border-radius: 5px; transition: width 0.8s ease;
+  background: linear-gradient(90deg, #3d8bff, #00e5a0); }
+.goal-pct { font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+.phase-section { border-top: 1px solid rgba(30,42,56,0.5); padding-top: 10px; margin-top: 8px; }
+.phase-title { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.phase-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;
+  margin-bottom: 4px; }
+.phase-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease;
+  background: var(--green); }
+.phase-bar-fill.pulse { animation: pulse-bar 1.5s ease-in-out infinite; }
+@keyframes pulse-bar { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.goal-projection { font-size: 12px; color: var(--text2); margin-top: 8px; }
+
+/* Live prices */
+.live-dot { display: inline-block; width: 8px; height: 8px; background: var(--green);
+  border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+.live-dot.active { animation: blink-dot 1.5s ease-in-out infinite; }
+@keyframes blink-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.delayed-badge { font-size: 10px; color: var(--gold); margin-right: 4px; }
+.price-row { display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid rgba(30,42,56,0.3); }
+.price-row:last-child { border-bottom: none; }
+.price-left { flex: 1; }
+.price-sym { font-weight: 700; font-size: 14px; }
+.price-val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.price-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.price-right { text-align: left; }
+.price-change { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+
+/* Committee tab */
+.agent-bar { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px;
+  overflow: hidden; flex: 1; margin: 0 8px; }
+.agent-bar-fill { height: 100%; border-radius: 4px; background: var(--green); }
+.agent-row { display: flex; align-items: center; padding: 6px 0; font-size: 13px; }
+.agent-name { min-width: 120px; font-weight: 600; }
+.agent-pct { font-family: var(--mono); min-width: 45px; text-align: left; font-weight: 700; }
+.decision-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 8px; overflow: hidden; cursor: pointer; }
+.decision-header { display: flex; justify-content: space-between; align-items: center;
+  padding: 12px; }
+.decision-card.approved { border-right: 4px solid var(--green); }
+.decision-card.vetoed { border-right: 4px solid var(--red); }
+.decision-card.rejected { border-right: 4px solid #444; }
+.decision-details { display: none; padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.decision-details.open { display: block; }
+.verdict-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+.filter-bar { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; }
+.filter-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text2); font-size: 12px; cursor: pointer;
+  white-space: nowrap; font-family: var(--font); }
+.filter-btn.active { background: var(--green); color: var(--bg); border-color: var(--green); }
+
+@media (min-width: 600px) {
+  .tab-content { max-width: 500px; margin: 0 auto; }
+  .header { max-width: 500px; margin: 0 auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>swingbot</h1>
+  <span id="modeBadge" class="mode-badge mode-paper">ورقي</span>
+</div>
+<div id="disconnected" class="disconnected">غير متصل</div>
+
+<!-- Tab 1: Home -->
+<div id="tab-home" class="tab-content active">
+  <div class="balance-big">
+    <div class="amount" id="balance">$0.00</div>
+    <div class="day-pnl" id="dayPnl">ربح اليوم: $0.00 0%</div>
+  </div>
+  <div class="card">
+    <div class="status-row"><span class="status-label">⚡ Circuit Breaker</span><span class="status-value status-ok" id="sBreaker">OK</span></div>
+    <div class="status-row"><span class="status-label">🎯 Sniper Mode</span><span class="status-value" style="display:flex;align-items:center;gap:8px"><span id="sSniper" style="color:#888">OFF</span><label class="toggle" style="margin:0"><input type="checkbox" id="sSniperToggle" onchange="toggleSniperFromHome(this.checked)"><span class="slider"></span></label></span></div>
+    <div class="status-row"><span class="status-label">🛡 وضع المحافظة</span><span class="status-value status-ok" id="sConservative">إيقاف</span></div>
+    <div class="status-row"><span class="status-label">📊 Macro Scale</span><span class="status-value" id="sMacro">1.00</span></div>
+    <div class="status-row"><span class="status-label">😐 المشاعر</span><span class="status-value" id="sSentiment">محايد</span></div>
+    <div class="status-row"><span class="status-label">⏰ فلتر الأوقات</span><span class="status-value status-ok" id="sHours">OK</span></div>
+    <div class="status-row"><span class="status-label">⏱ المسح القادم</span><span class="status-value" id="sNextScan" style="color:var(--blue)">--:--</span></div>
+  </div>
+  <!-- Goal Tracker -->
+  <div class="goal-card" id="goalTracker" style="display:none">
+    <div class="goal-title" id="goalTitle">🎯 Goal: $100 → $1,000</div>
+    <div class="goal-amounts">
+      <span id="goalCurrent">$0</span>
+      <span id="goalTarget">$1,000</span>
+    </div>
+    <div class="goal-bar"><div class="goal-bar-fill" id="goalBarFill" style="width:0%"></div></div>
+    <div class="goal-pct" id="goalPct">0% complete</div>
+    <div class="phase-section">
+      <div class="phase-title" id="phaseTitle">── Phase 1: $100 → $250 ──</div>
+      <div class="phase-bar"><div class="phase-bar-fill" id="phaseBarFill" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
+        <span id="phaseCurrent">$0 / $250</span>
+        <span id="phasePct">0%</span>
+      </div>
+    </div>
+    <div class="goal-projection" id="goalProjection"></div>
+  </div>
+
+  <div class="scan-title">── أفضل الفرص ── <span class="live-dot" id="liveDot" title="Live prices"></span></div>
+  <div id="scanResults"></div>
+</div>
+
+<!-- Tab 2: Trades -->
+<div id="tab-trades" class="tab-content">
+  <div id="positionsList"></div>
+</div>
+
+<!-- Tab 3: History -->
+<div id="tab-history" class="tab-content">
+  <div id="streakBanner" class="streak" style="display:none"></div>
+  <div class="chart-wrap"><canvas id="balanceChart"></canvas></div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-value" id="hWinRate">0%</div><div class="stat-label">نسبة الفوز</div></div>
+    <div class="stat-box"><div class="stat-value" id="hSharpe">--</div><div class="stat-label">Sharpe</div></div>
+    <div class="stat-box"><div class="stat-value pnl-pos" id="hBest">$0</div><div class="stat-label">أفضل</div></div>
+    <div class="stat-box"><div class="stat-value pnl-neg" id="hWorst">$0</div><div class="stat-label">أسوأ</div></div>
+  </div>
+  <div class="scan-title">── آخر الصفقات ──</div>
+  <div id="tradesList"></div>
+</div>
+
+<!-- Tab 4: Reports -->
+<div id="tab-reports" class="tab-content">
+  <h3 style="margin-bottom:12px;color:var(--gold)">📑 التقارير الأسبوعية</h3>
+  <div id="latestReport" class="card report-card">
+    <p style="color:var(--text2)">جاري التحميل...</p>
+  </div>
+  <div class="report-actions">
+    <button class="btn btn-primary" onclick="sendWeeklyReport()">📤 إرسال الآن</button>
+  </div>
+  <div class="scan-title" style="margin-top:20px">── آخر 4 أسابيع ──</div>
+  <div id="weeksList" class="weeks-list"></div>
+</div>
+
+<!-- Tab 5: Settings -->
+<div id="tab-settings" class="tab-content">
+
+  <!-- GROUP 1: Exchange & Connection -->
+  <details class="settings-section" open>
+    <summary class="settings-title">🔌 Exchange & Connection</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Exchange</label>
+        <select class="field-input" id="setExchange" style="appearance:auto;padding:12px 16px">
+          <option value="mexc">MEXC</option>
+          <option value="bybit">Bybit</option>
+          <option value="binance">Binance</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Account Type</label>
+        <select class="field-input" id="setAccountType" style="appearance:auto;padding:12px 16px">
+          <option value="spot">Spot</option>
+          <option value="linear">Futures (Linear)</option>
+        </select>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Trading Mode</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="modeLabel" style="font-size:12px;font-weight:700;color:var(--gold)">PAPER</span>
+          <label class="toggle"><input type="checkbox" id="setLive" onchange="toggleLive(this)"><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">API Key</label>
+        <input type="text" class="field-input" id="setApiKey" placeholder="API Key">
+      </div>
+      <div class="field-group">
+        <label class="field-label">API Secret</label>
+        <input type="password" class="field-input" id="setApiSecret" placeholder="API Secret (masked)">
+      </div>
+      <div class="field-row">
+        <button class="btn btn-primary" onclick="saveExchange()">Save</button>
+        <button class="btn btn-secondary" onclick="testConnection()">Test Connection</button>
+      </div>
+      <div id="connStatus"></div>
+      <div id="exchangeGuide" style="margin-top:10px;padding:10px;background:rgba(0,229,160,0.05);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text2);display:none"></div>
+    </div>
+  </details>
+
+  <!-- GROUP 2: Scan Settings -->
+  <details class="settings-section">
+    <summary class="settings-title">📡 Scan Settings</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Scan Interval (minutes)</label>
+        <div class="stepper">
+          <button onclick="step('scanInt',-5)">−</button>
+          <span class="val" id="scanInt">10</span>
+          <button onclick="step('scanInt',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Number of Symbols</label>
+        <div class="stepper">
+          <button onclick="step('scanN',-5)">−</button>
+          <span class="val" id="scanN">20</span>
+          <button onclick="step('scanN',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Timeframe</label>
+        <select class="field-input" id="setTimeframe" style="appearance:auto;padding:12px 16px">
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1d">1d</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Lookback Candles</label>
+        <div class="stepper">
+          <button onclick="step('setLookback',-50)">−</button>
+          <span class="val" id="setLookback">100</span>
+          <button onclick="step('setLookback',50)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Min Volume (USDT)</label>
+        <input type="number" class="field-input" id="setMinVolume" value="10000000" step="1000000" min="0">
+      </div>
+      <p style="font-size:11px;color:var(--text2);margin:8px 0">Changes apply on next scan cycle automatically</p>
+      <button class="btn btn-primary" onclick="saveScanSettings()" style="width:100%">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 3: Signal Quality -->
+  <details class="settings-section">
+    <summary class="settings-title">🎯 Signal Quality</summary>
+    <div style="padding-top:8px">
+      <div class="toggle-row" style="background:rgba(255,71,87,0.08);border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid rgba(255,71,87,0.2)">
+        <div>
+          <span class="toggle-label" style="font-weight:700;color:#ffd700">Sniper Mode</span>
+          <div style="font-size:11px;color:#888;margin-top:2px">Bypass macro/sentiment filters. Only 85+ score setups.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="setSniperMode" onchange="onSniperToggle(this.checked)"><span class="slider"></span></label>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Minimum Score: <span id="minScoreVal" style="color:var(--green);font-weight:700">65</span></label>
+        <input type="range" id="setMinScore" min="0" max="100" value="65" step="5"
+          style="width:100%;accent-color:var(--green)"
+          oninput="document.getElementById('minScoreVal').textContent=this.value">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Min R:R Ratio</label>
+        <div class="stepper">
+          <button onclick="stepFloat('setMinRR',-0.5)">−</button>
+          <span class="val" id="setMinRR">2.0</span>
+          <button onclick="stepFloat('setMinRR',0.5)">+</button>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Allow Short Selling</span>
+        <label class="toggle"><input type="checkbox" id="setShort"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Breakout Detection</span>
+        <label class="toggle"><input type="checkbox" id="setBreakout" checked><span class="slider"></span></label>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Breakout Lookback</label>
+        <div class="stepper">
+          <button onclick="step('setBreakoutLookback',-5)">−</button>
+          <span class="val" id="setBreakoutLookback">20</span>
+          <button onclick="step('setBreakoutLookback',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Breakout Volume Multiplier</label>
+        <div class="stepper">
+          <button onclick="stepFloat('setBreakoutVolMult',-0.5)">−</button>
+          <span class="val" id="setBreakoutVolMult">2.0</span>
+          <button onclick="stepFloat('setBreakoutVolMult',0.5)">+</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSignalSettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 4: Risk Management -->
+  <details class="settings-section">
+    <summary class="settings-title">🛡 Risk Management</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Risk per Trade: <span id="riskVal" style="color:var(--green);font-weight:700">3%</span></label>
+        <input type="range" id="setRisk" min="0.5" max="10" value="3" step="0.5"
+          style="width:100%;accent-color:var(--green)"
+          oninput="document.getElementById('riskVal').textContent=this.value+'%'">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max Open Positions</label>
+        <div class="stepper">
+          <button onclick="step('maxPos',-1)">−</button>
+          <span class="val" id="maxPos">3</span>
+          <button onclick="step('maxPos',1)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max Portfolio Risk %</label>
+        <div class="stepper">
+          <button onclick="stepFloat('setPortRisk',-0.5)">−</button>
+          <span class="val" id="setPortRisk">5.0</span>
+          <button onclick="stepFloat('setPortRisk',0.5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max Single Position %</label>
+        <div class="stepper">
+          <button onclick="stepFloat('setSinglePos',-5)">−</button>
+          <span class="val" id="setSinglePos">30.0</span>
+          <button onclick="stepFloat('setSinglePos',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Daily Loss Limit %</label>
+        <div class="stepper">
+          <button onclick="stepFloat('setDailyLoss',-0.5)">−</button>
+          <span class="val" id="setDailyLoss">10.0</span>
+          <button onclick="stepFloat('setDailyLoss',0.5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Consecutive Loss Limit</label>
+        <div class="stepper">
+          <button onclick="step('setConsecLoss',-1)">−</button>
+          <span class="val" id="setConsecLoss">3</span>
+          <button onclick="step('setConsecLoss',1)">+</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveRiskSettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 5: Sentiment & Macro -->
+  <details class="settings-section">
+    <summary class="settings-title">😐 Sentiment & Macro</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Fear & Greed Threshold</label>
+        <div class="stepper">
+          <button onclick="step('setSentiment',-5)">−</button>
+          <span class="val" id="setSentiment">20</span>
+          <button onclick="step('setSentiment',5)">+</button>
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin-top:4px">Block new entries when Fear & Greed index is below this value</p>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Scanner Enabled</span>
+        <label class="toggle"><input type="checkbox" id="setScannerEnabled" checked><span class="slider"></span></label>
+      </div>
+      <button class="btn btn-primary" onclick="saveSentimentSettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 6: Conservative Mode -->
+  <details class="settings-section">
+    <summary class="settings-title">🛡 Conservative Mode</summary>
+    <div style="padding-top:8px">
+      <div class="toggle-row">
+        <span class="toggle-label">Enabled</span>
+        <label class="toggle"><input type="checkbox" id="setConservative" checked><span class="slider"></span></label>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Consecutive Losses Trigger</label>
+        <div class="stepper">
+          <button onclick="step('cmLosses',-1)">−</button>
+          <span class="val" id="cmLosses">3</span>
+          <button onclick="step('cmLosses',1)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Daily Loss Trigger %</label>
+        <div class="stepper">
+          <button onclick="step('cmDailyLoss',-5)">−</button>
+          <span class="val" id="cmDailyLoss">50</span>
+          <button onclick="step('cmDailyLoss',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Drawdown Trigger %</label>
+        <div class="stepper">
+          <button onclick="step('cmDrawdown',-5)">−</button>
+          <span class="val" id="cmDrawdown">15</span>
+          <button onclick="step('cmDrawdown',5)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Risk Reduction %</label>
+        <div class="stepper">
+          <button onclick="step('cmRiskCut',-10)">−</button>
+          <span class="val" id="cmRiskCut">50</span>
+          <button onclick="step('cmRiskCut',10)">+</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Wins Needed to Exit</label>
+        <div class="stepper">
+          <button onclick="step('cmWins',-1)">−</button>
+          <span class="val" id="cmWins">2</span>
+          <button onclick="step('cmWins',1)">+</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveConservativeSettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 7: Trading Hours -->
+  <details class="settings-section">
+    <summary class="settings-title">🕐 Trading Hours</summary>
+    <div style="padding-top:8px">
+      <div class="toggle-row">
+        <span class="toggle-label">Hours Filter Enabled</span>
+        <label class="toggle"><input type="checkbox" id="setHours" checked><span class="slider"></span></label>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Avoid Hours (UTC) — select hours to skip</label>
+        <div id="hoursGrid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:6px">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveHoursSettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+  <!-- GROUP 8: Notifications -->
+  <details class="settings-section">
+    <summary class="settings-title">🔔 Notifications</summary>
+    <div style="padding-top:8px">
+      <details style="margin-bottom:12px" id="discordDetails">
+        <summary style="cursor:pointer;font-weight:600;padding:8px 0">Discord</summary>
+        <div style="padding:8px 0">
+          <div class="toggle-row">
+            <span class="toggle-label">Enabled</span>
+            <label class="toggle"><input type="checkbox" id="discordEnabled"><span class="slider"></span></label>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Main Webhook (all notifications)</label>
+            <input type="text" class="field-input" id="dcGeneral" placeholder="https://discord.com/api/webhooks/...">
+            <p style="font-size:11px;color:var(--text2);margin-top:4px">One URL is enough — or set per-channel below</p>
+          </div>
+          <details style="margin-top:8px">
+            <summary style="cursor:pointer;font-size:13px;color:var(--text2);padding:4px 0">Per-channel webhooks (optional)</summary>
+            <div style="padding:8px 0">
+              <div class="field-group"><label class="field-label">#trades</label>
+                <input type="text" class="field-input" id="dcTrades" placeholder="Webhook URL (empty = use main)"></div>
+              <div class="field-group"><label class="field-label">#closed</label>
+                <input type="text" class="field-input" id="dcClosed" placeholder="Webhook URL (empty = use main)"></div>
+              <div class="field-group"><label class="field-label">#reports</label>
+                <input type="text" class="field-input" id="dcReports" placeholder="Webhook URL (empty = use main)"></div>
+              <div class="field-group"><label class="field-label">#warnings</label>
+                <input type="text" class="field-input" id="dcWarnings" placeholder="Webhook URL (empty = use main)"></div>
+            </div>
+          </details>
+          <div class="field-row" style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testNotif('discord')">Test</button>
+            <button class="btn btn-primary" onclick="saveNotifications()">Save</button>
+          </div>
+        </div>
+      </details>
+      <details style="margin-bottom:12px">
+        <summary style="cursor:pointer;font-weight:600;padding:8px 0">Telegram</summary>
+        <div style="padding:8px 0">
+          <div class="toggle-row">
+            <span class="toggle-label">Enabled</span>
+            <label class="toggle"><input type="checkbox" id="tgEnabled"><span class="slider"></span></label>
+          </div>
+          <div class="field-group"><label class="field-label">Bot Token</label>
+            <input type="text" class="field-input" id="tgToken" placeholder="Bot Token"></div>
+          <div class="field-group"><label class="field-label">Chat ID</label>
+            <input type="text" class="field-input" id="tgChatId" placeholder="Chat ID"></div>
+          <div class="field-row">
+            <button class="btn btn-secondary" onclick="testNotif('telegram')">Test</button>
+            <button class="btn btn-primary" onclick="saveNotifications()">Save</button>
+          </div>
+        </div>
+      </details>
+      <details style="margin-bottom:12px">
+        <summary style="cursor:pointer;font-weight:600;padding:8px 0">Custom Webhook</summary>
+        <div style="padding:8px 0">
+          <div class="toggle-row">
+            <span class="toggle-label">Enabled</span>
+            <label class="toggle"><input type="checkbox" id="customEnabled"><span class="slider"></span></label>
+          </div>
+          <div class="field-group"><label class="field-label">Webhook URL</label>
+            <input type="text" class="field-input" id="customUrl" placeholder="Webhook URL"></div>
+          <div class="field-row">
+            <button class="btn btn-secondary" onclick="testNotif('custom')">Test</button>
+            <button class="btn btn-primary" onclick="saveNotifications()">Save</button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <!-- GROUP 9: Bot Identity -->
+  <details class="settings-section">
+    <summary class="settings-title">🤖 Bot Identity</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Account Name</label>
+        <input type="text" class="field-input" id="setAccountName" placeholder="Swingbot Paper">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Paper Start Balance (USDT)</label>
+        <input type="number" class="field-input" id="setPaperBalance" value="1000" step="100" min="10">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Base Balance (for compounding)</label>
+        <input type="number" class="field-input" id="setBaseBalance" value="100" step="10" min="1">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Language</label>
+        <select class="field-input" id="setLang" style="appearance:auto;padding:12px 16px">
+          <option value="en">English</option>
+          <option value="ar">العربية</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="saveIdentitySettings()" style="width:100%;margin-top:8px">Save</button>
+    </div>
+  </details>
+
+</div>
+
+<!-- Tab 6: Committee -->
+<div id="tab-committee" class="tab-content">
+  <h3 style="margin-bottom:12px;color:var(--gold)">🏆 Agent Accuracy</h3>
+  <div class="card" id="agentAccuracy">
+    <p style="color:var(--text2);font-size:13px">Need 10+ decisions to calculate accuracy</p>
+  </div>
+  <div class="card" id="vetoStats" style="display:none">
+    <div style="font-size:13px;color:var(--text2)" id="vetoText"></div>
+  </div>
+  <div class="filter-bar" id="committeeFilters">
+    <button class="filter-btn active" data-filter="all" onclick="filterCommittee('all',this)">All</button>
+    <button class="filter-btn" data-filter="approved" onclick="filterCommittee('approved',this)">Approved</button>
+    <button class="filter-btn" data-filter="vetoed" onclick="filterCommittee('vetoed',this)">Vetoed</button>
+    <button class="filter-btn" data-filter="rejected" onclick="filterCommittee('rejected',this)">Rejected</button>
+  </div>
+  <div class="scan-title">── Decision History ──</div>
+  <div id="committeeList"></div>
+</div>
+
+<!-- Tab 7: AI Chat -->
+<div id="tab-chat" class="tab-content">
+  <div class="chat-header">
+    <div class="chat-avatar">🤖</div>
+    <div>
+      <div class="chat-name">Swingbot AI</div>
+      <div class="chat-status" id="chatStatus">Online</div>
+    </div>
+  </div>
+
+  <div class="suggestions" id="suggestions">
+    <div class="suggest-title">Ask me about the bot</div>
+    <div class="suggest-chips">
+      <button class="chip" onclick="sendSuggestion(this)">What is the bot doing now?</button>
+      <button class="chip" onclick="sendSuggestion(this)">Why no trades today?</button>
+      <button class="chip" onclick="sendSuggestion(this)">How is my balance?</button>
+      <button class="chip" onclick="sendSuggestion(this)">Best opportunity right now?</button>
+      <button class="chip" onclick="sendSuggestion(this)">Explain conservative mode</button>
+      <button class="chip" onclick="sendSuggestion(this)">Show scan results</button>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="chatMessages"></div>
+
+  <div class="chat-input-wrap">
+    <input type="text" id="chatInput"
+      placeholder="Ask about the bot..."
+      onkeydown="if(event.key==='Enter') sendMessage()">
+    <button class="chat-send" onclick="sendMessage()" id="sendBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="home">
+    <svg viewBox="0 0 24 24"><path d="M12 3l9 8h-3v10h-5v-6h-2v6H6V11H3z"/></svg>
+    <span>الرئيسية</span>
+  </button>
+  <button class="tab-btn" data-tab="trades">
+    <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+    <span>الصفقات</span>
+  </button>
+  <button class="tab-btn" data-tab="history">
+    <svg viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
+    <span>السجل</span>
+  </button>
+  <button class="tab-btn" data-tab="reports">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/></svg>
+    <span>التقارير</span>
+  </button>
+  <button class="tab-btn" data-tab="committee">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+    <span>Committee</span>
+  </button>
+  <button class="tab-btn" data-tab="chat">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    <span>AI Chat</span>
+  </button>
+  <button class="tab-btn" data-tab="settings">
+    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+    <span>الإعدادات</span>
+  </button>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+let nextScanSec = 0, balChart = null;
+let livePrices = {};
+let pricesLive = false;
+let committeeFilter = 'all';
+let committeeData = null;
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'history') loadHistory();
+    if (btn.dataset.tab === 'reports') loadReports();
+    if (btn.dataset.tab === 'settings') loadSettings();
+    if (btn.dataset.tab === 'committee') loadCommittee();
+    if (btn.dataset.tab === 'chat') initChat();
+  });
+});
+
+function toast(msg, err) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (err ? ' error' : '');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function api(url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    if (r.status === 302 || r.redirected) { window.location = '/login'; return null; }
+    return await r.json();
+  } catch(e) { return null; }
+}
+
+function fmtPct(v) { return (v >= 0 ? '+' : '') + v.toFixed(1) + '%'; }
+function fmtTime(sec) {
+  if (sec <= 0) return '0:00';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+function timeAgo(sec) {
+  if (sec < 60) return sec + ' ثانية';
+  if (sec < 3600) return Math.floor(sec / 60) + ' دقيقة';
+  return Math.floor(sec / 3600) + ' ساعة';
+}
+function fmtVol(v) {
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+function fmtPrice(v) {
+  if (v >= 1000) return v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (v >= 1) return v.toFixed(2);
+  return v.toFixed(4);
+}
+
+// ── Live Prices ──────────────────────────────────────────────────────
+async function fetchLivePrices() {
+  const d = await api('/api/prices');
+  if (d && Object.keys(d).length > 0) {
+    livePrices = d;
+    pricesLive = true;
+    document.getElementById('liveDot').classList.add('active');
+  } else {
+    pricesLive = false;
+    document.getElementById('liveDot').classList.remove('active');
+  }
+  updateScannerWithPrices();
+  updatePositionsWithPrices();
+}
+
+function updateScannerWithPrices() {
+  // Called after prices update — re-render scan results with live data
+  const container = document.getElementById('scanResults');
+  const items = container.querySelectorAll('.scan-item, .price-row');
+  // If we already rendered price rows, don't duplicate — they'll be re-rendered on next loadStatus
+}
+
+function updatePositionsWithPrices() {
+  // Update open positions P&L with live prices
+  const cards = document.querySelectorAll('.pos-card');
+  cards.forEach(card => {
+    const sym = card.dataset.symbol;
+    if (!sym || !livePrices[sym]) return;
+    const p = livePrices[sym];
+    const currentEl = card.querySelector('.pos-current-price');
+    if (currentEl) currentEl.textContent = '$' + fmtPrice(p.price);
+  });
+}
+
+// ── Goal Tracker ─────────────────────────────────────────────────────
+function updateGoalTracker(gt) {
+  const card = document.getElementById('goalTracker');
+  if (!gt || !gt.target_balance) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  document.getElementById('goalTitle').textContent =
+    '🎯 Goal: $' + gt.start_balance + ' → $' + gt.target_balance.toLocaleString();
+  document.getElementById('goalCurrent').textContent = '$' + gt.current_balance.toFixed(2);
+  document.getElementById('goalTarget').textContent = '$' + gt.target_balance.toLocaleString();
+  document.getElementById('goalBarFill').style.width = Math.min(gt.progress_pct, 100) + '%';
+  document.getElementById('goalPct').textContent = gt.progress_pct.toFixed(1) + '% complete';
+
+  // Phase
+  document.getElementById('phaseTitle').textContent =
+    '── ' + gt.phase_name + ': $' + gt.phase_start + ' → $' + gt.phase_target + ' ──';
+  const phaseBar = document.getElementById('phaseBarFill');
+  phaseBar.style.width = Math.min(gt.phase_progress_pct, 100) + '%';
+  // Pulse animation when near completion
+  if (gt.phase_progress_pct >= 90) phaseBar.classList.add('pulse');
+  else phaseBar.classList.remove('pulse');
+
+  document.getElementById('phaseCurrent').textContent =
+    '$' + gt.current_balance.toFixed(2) + ' / $' + gt.phase_target;
+  document.getElementById('phasePct').textContent =
+    gt.phase_progress_pct.toFixed(1) + '%' + (gt.phase_progress_pct >= 90 ? ' 🔥' : '');
+
+  document.getElementById('goalProjection').textContent =
+    gt.trades_completed + ' trades · ' + gt.projected_completion;
+
+  // Gold glow when near target
+  if (gt.current_balance > gt.target_balance * 0.9) {
+    document.getElementById('goalTarget').style.color = 'var(--gold)';
+  }
+}
+
+// ── Status ───────────────────────────────────────────────────────────
+async function loadStatus() {
+  const d = await api('/api/status');
+  if (!d) { document.getElementById('disconnected').classList.add('show'); return; }
+  document.getElementById('disconnected').classList.remove('show');
+
+  const badge = document.getElementById('modeBadge');
+  if (d.mode === 'live') { badge.textContent = 'حي 🔴'; badge.className = 'mode-badge mode-live'; }
+  else { badge.textContent = 'ورقي 🟡'; badge.className = 'mode-badge mode-paper'; }
+
+  document.getElementById('balance').textContent = '$' + (d.balance || 0).toFixed(2);
+  const pnlEl = document.getElementById('dayPnl');
+  const pnl = d.day_pnl || 0, pnlPct = d.day_pnl_pct || 0;
+  pnlEl.textContent = 'ربح اليوم: ' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) + ' ' + fmtPct(pnlPct);
+  pnlEl.className = 'day-pnl ' + (pnl >= 0 ? 'pnl-pos' : 'pnl-neg');
+
+  const bk = d.circuit_breaker || 'OK';
+  const bkEl = document.getElementById('sBreaker');
+  bkEl.textContent = bk === 'OK' ? 'OK' : bk;
+  bkEl.className = 'status-value ' + (bk === 'OK' ? 'status-ok' : 'status-bad');
+
+  const sniperEl = document.getElementById('sSniper');
+  const sniperToggle = document.getElementById('sSniperToggle');
+  if (d.sniper_mode) {
+    sniperEl.textContent = 'ACTIVE';
+    sniperEl.style.color = '#ffd700';
+    sniperEl.style.fontWeight = '700';
+    sniperToggle.checked = true;
+  } else {
+    sniperEl.textContent = 'OFF';
+    sniperEl.style.color = '#888';
+    sniperEl.style.fontWeight = '400';
+    sniperToggle.checked = false;
+  }
+
+  const cm = d.conservative_mode || {};
+  const cmEl = document.getElementById('sConservative');
+  cmEl.textContent = cm.active ? cm.reason : 'إيقاف';
+  cmEl.className = 'status-value ' + (cm.active ? 'status-warn' : 'status-ok');
+
+  document.getElementById('sMacro').textContent = (d.macro_scale || 1).toFixed(2);
+
+  const sentEl = document.getElementById('sSentiment');
+  sentEl.textContent = d.sentiment_ok ? 'محايد' : 'خوف شديد';
+  sentEl.className = 'status-value ' + (d.sentiment_ok ? 'status-ok' : 'status-bad');
+
+  const hEl = document.getElementById('sHours');
+  hEl.textContent = d.trading_hours_ok ? 'OK' : d.trading_hours_reason;
+  hEl.className = 'status-value ' + (d.trading_hours_ok ? 'status-ok' : 'status-warn');
+
+  nextScanSec = d.next_scan_seconds || 0;
+  document.getElementById('sNextScan').textContent = fmtTime(nextScanSec);
+
+  // Goal tracker
+  if (d.goal_tracker) updateGoalTracker(d.goal_tracker);
+
+  // Scan results with live prices
+  const sr = d.scan_results || [];
+  const container = document.getElementById('scanResults');
+  if (!sr.length) {
+    container.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">لا توجد نتائج مسح</p>';
+  } else {
+    container.innerHTML = sr.slice(0, 8).map(s => {
+      const pct = Math.min(s.score, 100);
+      const color = pct >= 75 ? 'var(--green)' : pct >= 60 ? 'var(--gold)' : 'var(--text2)';
+      const sig = s.signal === 'BUY' ? 'BUY' : 'انتظار';
+      const sigClass = s.signal === 'BUY' ? 'signal-buy' : 'signal-hold';
+      const fire = pct >= 80 ? ' 🔥' : '';
+
+      // Live price data
+      const lp = livePrices[s.symbol];
+      let priceHtml = '';
+      if (lp) {
+        const chg = lp.change_24h || 0;
+        const chgColor = chg >= 0 ? 'var(--green)' : 'var(--red)';
+        const arrow = chg >= 0 ? '▲' : '▼';
+        priceHtml = `
+          <div style="font-family:var(--mono);font-size:12px;font-weight:600">$${fmtPrice(lp.price)}</div>
+          <div style="font-size:11px;color:${chgColor}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}% ${arrow}</div>
+          <div style="font-size:10px;color:var(--text2)">H: $${fmtPrice(lp.high_24h)} L: $${fmtPrice(lp.low_24h)}</div>
+          <div style="font-size:10px;color:var(--text2)">Vol: ${fmtVol(lp.volume_24h)}</div>`;
+      } else if (s.price) {
+        priceHtml = `<div style="font-family:var(--mono);font-size:12px">$${fmtPrice(s.price)}</div>`;
+      }
+
+      return `<div class="price-row">
+        <div class="price-left">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span class="price-sym">${s.symbol}</span>
+            <span style="font-family:var(--mono);font-size:12px;color:${color}">${Math.round(pct)}/100</span>
+            <span class="scan-signal ${sigClass}" style="font-size:11px">${sig}${fire}</span>
+          </div>
+          <div class="scan-bar" style="margin-bottom:0"><div class="scan-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>
+        <div class="price-right" style="min-width:100px;text-align:left;padding-right:4px">
+          ${priceHtml}
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// Positions
+async function loadPositions() {
+  const d = await api('/api/positions');
+  const container = document.getElementById('positionsList');
+  if (!d || !d.length) {
+    container.innerHTML = '<div class="empty-state">لا توجد صفقات 🌙</div>';
+    return;
+  }
+  container.innerHTML = d.map(p => {
+    // Use live price if available
+    const lp = livePrices[p.symbol];
+    let currentPrice = p.current_price || p.entry_price;
+    let pnl = p.unrealized_pnl || 0;
+    let pnlPct = p.unrealized_pnl_pct || 0;
+
+    if (lp && lp.price) {
+      currentPrice = lp.price;
+      if (p.side === 'LONG') {
+        pnl = (currentPrice - p.entry_price) * (p.unrealized_pnl / ((p.current_price || p.entry_price) - p.entry_price) || 0);
+      }
+      // Recalculate if we have amount info from entry
+      if (p.entry_price > 0) {
+        const diff = p.side === 'LONG' ? currentPrice - p.entry_price : p.entry_price - currentPrice;
+        pnlPct = (diff / p.entry_price) * 100;
+      }
+    }
+
+    const isLoss = pnl < 0;
+    const sideClass = p.side === 'LONG' ? 'pos-long' : 'pos-short';
+    return `<div class="card pos-card ${isLoss ? 'losing' : ''}" data-symbol="${p.symbol}">
+      <div class="pos-header">
+        <span class="pos-symbol">${p.symbol}</span>
+        <span class="pos-side ${sideClass}">${p.side === 'LONG' ? '▲ LONG' : '▼ SHORT'}</span>
+      </div>
+      <div class="pos-grid">
+        <div class="pos-field"><span class="pos-field-label">دخول</span><span class="pos-field-value">$${fmtPrice(p.entry_price)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">الحين</span><span class="pos-field-value pos-current-price">$${fmtPrice(currentPrice)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">وقف 🛑</span><span class="pos-field-value">$${fmtPrice(p.stop_loss||0)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">هدف 🎯</span><span class="pos-field-value">$${fmtPrice(p.take_profit||0)}</span></div>
+        <div class="pos-field"><span class="pos-field-label">ربح</span><span class="pos-field-value ${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${fmtPct(pnlPct)})</span></div>
+        <div class="pos-field"><span class="pos-field-label">مفتوحة</span><span class="pos-field-value">منذ ${timeAgo(p.opened_ago_seconds)}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// History
+async function loadHistory() {
+  const d = await api('/api/history');
+  if (!d) return;
+
+  const sb = document.getElementById('streakBanner');
+  const s = d.win_streak || 0;
+  if (s > 0) { sb.textContent = '🔥 ' + s + ' صفقات رابحة متتالية'; sb.className = 'streak streak-win'; sb.style.display = 'block'; }
+  else if (s < 0) { sb.textContent = '❄️ ' + Math.abs(s) + ' صفقات خاسرة متتالية'; sb.className = 'streak streak-loss'; sb.style.display = 'block'; }
+  else { sb.style.display = 'none'; }
+
+  document.getElementById('hWinRate').textContent = (d.win_rate || 0) + '%';
+  document.getElementById('hSharpe').textContent = d.sharpe_ratio != null ? d.sharpe_ratio.toFixed(2) : '--';
+  document.getElementById('hBest').textContent = '+$' + (d.best_trade || 0).toFixed(2);
+  document.getElementById('hWorst').textContent = '-$' + Math.abs(d.worst_trade || 0).toFixed(2);
+
+  const bh = d.balance_history || [];
+  if (bh.length > 1) {
+    const ctx = document.getElementById('balanceChart').getContext('2d');
+    if (balChart) balChart.destroy();
+    balChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: bh.map((_,i) => i+1), datasets: [{
+        data: bh, borderColor: '#00e5a0', backgroundColor: 'rgba(0,229,160,0.08)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+      }]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { grid: { color: 'rgba(30,42,56,0.5)' },
+          ticks: { color: '#8b95a5', font: { family: "'IBM Plex Mono'" } } } } }
+    });
+  }
+
+  const tl = document.getElementById('tradesList');
+  const trades = d.trades || [];
+  if (!trades.length) { tl.innerHTML = '<div class="empty-state">لا توجد صفقات سابقة</div>'; return; }
+  tl.innerHTML = trades.map(t => {
+    const icon = t.pnl > 0 ? '✅' : '❌';
+    const pnlClass = t.pnl > 0 ? 'pnl-pos' : 'pnl-neg';
+    const reason = t.reason || '';
+    const reasonIcon = reason.includes('TP') || reason.includes('take') ? '🎯 TP' :
+                       reason.includes('SL') || reason.includes('stop') ? '🛑 SL' :
+                       reason.includes('TRAIL') ? '📈 Trail' : reason;
+    return `<div class="trade-item">
+      <span class="trade-icon">${icon}</span>
+      <span class="trade-sym">${t.symbol}</span>
+      <span class="trade-side">${t.side}</span>
+      <span class="trade-pnl ${pnlClass}">${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}</span>
+      <span class="trade-reason">${reasonIcon}</span>
+    </div>`;
+  }).join('');
+}
+
+// Reports
+async function loadReports() {
+  const d = await api('/api/weekly-reports');
+  const lr = document.getElementById('latestReport');
+  const wl = document.getElementById('weeksList');
+
+  if (!d || !d.length) {
+    lr.innerHTML = '<p style="color:var(--text2)">لا توجد تقارير أسبوعية بعد</p>';
+    wl.innerHTML = '';
+    return;
+  }
+
+  const latest = d[0];
+  lr.innerHTML = `
+    <div style="font-weight:700;font-size:16px;margin-bottom:8px">📈 ${latest.week}</div>
+    <div style="color:var(--text2);font-size:12px;margin-bottom:12px">${latest.period}</div>
+    <div class="pos-grid">
+      <div class="pos-field"><span class="pos-field-label">الصفقات</span><span class="pos-field-value">${latest.trades}</span></div>
+      <div class="pos-field"><span class="pos-field-label">نسبة الفوز</span><span class="pos-field-value">${(latest.win_rate||0).toFixed(0)}%</span></div>
+      <div class="pos-field"><span class="pos-field-label">الربح</span><span class="pos-field-value ${latest.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">$${(latest.total_pnl||0).toFixed(2)}</span></div>
+      <div class="pos-field"><span class="pos-field-label">Sharpe</span><span class="pos-field-value">${(latest.sharpe_ratio||0).toFixed(2)}</span></div>
+      <div class="pos-field"><span class="pos-field-label">Expectancy</span><span class="pos-field-value">$${(latest.expectancy||0).toFixed(2)}</span></div>
+      <div class="pos-field"><span class="pos-field-label">متوسط المدة</span><span class="pos-field-value">${(latest.avg_hold_hours||0).toFixed(1)}h</span></div>
+    </div>`;
+
+  wl.innerHTML = d.slice(1).map(w => `
+    <div class="week-row">
+      <span>${w.week}</span>
+      <span>${w.trades} صفقة</span>
+      <span>${(w.win_rate||0).toFixed(0)}%</span>
+      <span class="${w.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">$${(w.total_pnl||0).toFixed(2)}</span>
+    </div>`).join('');
+}
+
+async function sendWeeklyReport() {
+  const d = await api('/api/send-weekly-report', { method: 'POST', headers: {'Content-Type':'application/json'} });
+  if (d && d.success) toast('تم إرسال التقرير');
+  else toast(d?.error || 'فشل الإرسال', true);
+}
+
+// Settings
+// ── AI Chat ───────────────────────────────────────────────────────
+
+let chatHistory = [];
+
+function addMessage(role, content) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML =
+    '<div class="msg-avatar">' + (role === 'bot' ? '🤖' : '👤') + '</div>' +
+    '<div class="msg-bubble">' + content.replace(/\n/g, '<br>') + '</div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  document.getElementById('suggestions').style.display = 'none';
+}
+
+function showTyping() {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  div.id = 'typingIndicator';
+  div.innerHTML =
+    '<div class="msg-avatar">🤖</div>' +
+    '<div class="msg-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const message = input.value.trim();
+  if (!message) return;
+
+  addMessage('user', message);
+  chatHistory.push({ role: 'user', content: message });
+  input.value = '';
+  sendBtn.disabled = true;
+  showTyping();
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history: chatHistory.slice(-10) })
+    });
+    const data = await res.json();
+    removeTyping();
+    const reply = data.response || 'Sorry, no response.';
+    addMessage('bot', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+  } catch (err) {
+    removeTyping();
+    addMessage('bot', 'Connection error. Make sure the bot is running.');
+  }
+
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+function sendSuggestion(btn) {
+  document.getElementById('chatInput').value = btn.textContent;
+  sendMessage();
+}
+
+function initChat() {
+  if (chatHistory.length === 0) {
+    addMessage('bot',
+      'Hello! I\'m Swingbot\'s AI assistant.\n' +
+      'Ask me anything about what the bot is doing, why it made decisions, or how things work. 🤖'
+    );
+    document.getElementById('suggestions').style.display = 'block';
+  }
+}
+
+// ── Unified Settings System ───────────────────────────────────────
+
+async function saveSettings(data) {
+  const d = await api('/api/settings/save', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if (d?.success) toast('Saved — applies next cycle');
+  else toast(d?.error || 'Save failed', true);
+  return d;
+}
+
+async function loadSettings() {
+  const c = await api('/api/settings/load');
+  if (!c) return;
+
+  // GROUP 1: Exchange
+  document.getElementById('setExchange').value = c.primary_exchange || 'mexc';
+  document.getElementById('setAccountType').value = c.bybit_account_type || 'spot';
+  updateExchangeGuide(c.primary_exchange || 'mexc');
+
+  // Live mode
+  const isLive = c._trading_mode === 'live' && c._live_ok_file && c.live === true;
+  document.getElementById('setLive').checked = isLive;
+  document.getElementById('modeLabel').textContent = isLive ? 'LIVE' : 'PAPER';
+  document.getElementById('modeLabel').style.color = isLive ? 'var(--red)' : 'var(--gold)';
+
+  // GROUP 2: Scan
+  document.getElementById('scanInt').textContent = c.scan_interval_minutes || 10;
+  document.getElementById('scanN').textContent = c.scan_top_n || 20;
+  document.getElementById('setTimeframe').value = c.timeframe || '1h';
+  document.getElementById('setLookback').textContent = c.lookback || 100;
+  document.getElementById('setMinVolume').value = c.min_volume_usdt || 10000000;
+
+  // GROUP 3: Signal Quality
+  const isSniper = c.strategy_mode === 'sniper';
+  document.getElementById('setSniperMode').checked = isSniper;
+  const minScore = c.min_score || 65;
+  document.getElementById('setMinScore').value = minScore;
+  document.getElementById('minScoreVal').textContent = minScore;
+  document.getElementById('setMinRR').textContent = (c.min_rr_ratio || 2.0).toFixed(1);
+  document.getElementById('setShort').checked = c.allow_short !== false;
+  const scannerCfg = c.scanner || {};
+  document.getElementById('setBreakout').checked = scannerCfg.enabled !== false;
+  document.getElementById('setBreakoutLookback').textContent = c.breakout_lookback || 20;
+  document.getElementById('setBreakoutVolMult').textContent = (c.breakout_volume_mult || 2.0).toFixed(1);
+
+  // GROUP 4: Risk
+  const riskVal = c.risk_per_trade_percent || 3;
+  document.getElementById('setRisk').value = riskVal;
+  document.getElementById('riskVal').textContent = riskVal + '%';
+  document.getElementById('maxPos').textContent = c.max_open_positions || 3;
+  document.getElementById('setPortRisk').textContent = (c.max_portfolio_risk_percent || 5.0).toFixed(1);
+  document.getElementById('setSinglePos').textContent = (c.max_single_position_percent || 30.0).toFixed(1);
+  document.getElementById('setDailyLoss').textContent = (c.daily_loss_limit_percent || 10.0).toFixed(1);
+  document.getElementById('setConsecLoss').textContent = c.consecutive_loss_limit || 3;
+
+  // GROUP 5: Sentiment
+  document.getElementById('setSentiment').textContent = c.sentiment_threshold || 20;
+  document.getElementById('setScannerEnabled').checked = scannerCfg.enabled !== false;
+
+  // GROUP 6: Conservative Mode
+  const cm = c.conservative_mode || {};
+  document.getElementById('setConservative').checked = cm.enabled !== false;
+  document.getElementById('cmLosses').textContent = cm.consecutive_losses_trigger || 3;
+  document.getElementById('cmDailyLoss').textContent = cm.daily_loss_trigger_pct || 50;
+  document.getElementById('cmDrawdown').textContent = cm.drawdown_trigger_pct || 15;
+  document.getElementById('cmRiskCut').textContent = cm.risk_reduction_pct || 50;
+  document.getElementById('cmWins').textContent = cm.wins_to_exit || 2;
+
+  // GROUP 7: Trading Hours
+  const th = c.trading_hours || {};
+  document.getElementById('setHours').checked = th.enabled !== false;
+  buildHoursGrid(th.avoid_hours_utc || [0, 1, 2, 3, 4]);
+
+  // GROUP 8: Notifications
+  const n = c.notifications || {};
+  const dc = n.discord || {};
+  document.getElementById('discordEnabled').checked = dc.enabled || false;
+  const ch = dc.channels || {};
+  document.getElementById('dcGeneral').value = ch.general || '';
+  document.getElementById('dcTrades').value = ch.trades || '';
+  document.getElementById('dcClosed').value = ch.closed || '';
+  document.getElementById('dcReports').value = ch.reports || '';
+  document.getElementById('dcWarnings').value = ch.warnings || '';
+  const tg = n.telegram || {};
+  document.getElementById('tgEnabled').checked = tg.enabled || false;
+  document.getElementById('tgToken').value = tg.bot_token || '';
+  document.getElementById('tgChatId').value = tg.chat_id || '';
+  const cu = n.custom || {};
+  document.getElementById('customEnabled').checked = cu.enabled || false;
+  document.getElementById('customUrl').value = cu.webhook_url || '';
+
+  // GROUP 9: Bot Identity
+  document.getElementById('setAccountName').value = c.account_name || 'Swingbot Paper';
+  document.getElementById('setPaperBalance').value = c.paper_start_balance_usdt || 1000;
+  document.getElementById('setBaseBalance').value = c.base_balance || 100;
+  document.getElementById('setLang').value = c.lang || 'en';
+}
+
+// ── Trading Hours Grid ─────────────────────────────────────────────
+
+function buildHoursGrid(avoidHours) {
+  const grid = document.getElementById('hoursGrid');
+  grid.innerHTML = '';
+  for (let h = 0; h < 24; h++) {
+    const btn = document.createElement('button');
+    btn.className = 'hours-btn' + (avoidHours.includes(h) ? ' active' : '');
+    btn.textContent = h.toString().padStart(2, '0');
+    btn.onclick = function() { this.classList.toggle('active'); };
+    grid.appendChild(btn);
+  }
+}
+
+function getAvoidHours() {
+  const btns = document.querySelectorAll('#hoursGrid .hours-btn.active');
+  return Array.from(btns).map(b => parseInt(b.textContent));
+}
+
+// ── Steppers ───────────────────────────────────────────────────────
+
+function step(id, delta) {
+  const el = document.getElementById(id);
+  let v = parseInt(el.textContent) + delta;
+  const limits = {
+    maxPos: [1, 5], scanN: [5, 50], scanInt: [5, 60],
+    setLookback: [50, 500], setSentiment: [0, 50],
+    setConsecLoss: [1, 10], cmLosses: [1, 10], cmDailyLoss: [10, 100],
+    cmDrawdown: [5, 50], cmRiskCut: [10, 90], cmWins: [1, 5],
+    setBreakoutLookback: [5, 50]
+  };
+  const [min, max] = limits[id] || [1, 100];
+  el.textContent = Math.max(min, Math.min(max, v));
+}
+
+function stepFloat(id, delta) {
+  const el = document.getElementById(id);
+  let v = parseFloat(el.textContent) + delta;
+  const limits = {
+    setMinRR: [0.5, 5.0], setPortRisk: [1.0, 20.0],
+    setSinglePos: [5.0, 100.0], setDailyLoss: [0.5, 20.0],
+    setBreakoutVolMult: [1.0, 5.0]
+  };
+  const [min, max] = limits[id] || [0.5, 100];
+  el.textContent = Math.max(min, Math.min(max, v)).toFixed(1);
+}
+
+// ── Exchange Guide ─────────────────────────────────────────────────
+
+function updateExchangeGuide(exchange) {
+  const guide = document.getElementById('exchangeGuide');
+  const guides = {
+    mexc: '<b style="color:var(--green)">MEXC</b> — mexc.com &rarr; API Management &rarr; Create API<br>Permissions: <b>Spot Trade + Read</b> only. IP restriction recommended.',
+    bybit: '<b style="color:var(--green)">Bybit</b> — bybit.com &rarr; API Management &rarr; Create New Key<br>Permissions: <b>Read + Trade</b> only. Never enable Withdrawal.',
+    binance: '<b style="color:var(--green)">Binance</b> — binance.com &rarr; API Management &rarr; Create API<br>Permissions: <b>Enable Spot Trading</b> only. Restrict by IP.'
+  };
+  guide.innerHTML = guides[exchange] || '';
+  guide.style.display = exchange ? 'block' : 'none';
+}
+
+document.getElementById('setExchange').addEventListener('change', function() {
+  updateExchangeGuide(this.value);
+});
+
+// ── Per-Section Save Functions ─────────────────────────────────────
+
+async function saveExchange() {
+  const exchange = document.getElementById('setExchange').value;
+  const key = document.getElementById('setApiKey').value.trim();
+  const secret = document.getElementById('setApiSecret').value.trim();
+  const data = {
+    primary_exchange: exchange,
+    bybit_account_type: document.getElementById('setAccountType').value,
+  };
+  // API keys go via the unified endpoint (routed to .env internally)
+  const prefix = exchange.toLowerCase();
+  if (key) data[prefix + '_api_key'] = key;
+  if (secret) data[prefix + '_api_secret'] = secret;
+  await saveSettings(data);
+}
+
+async function testConnection() {
+  const exchange = document.getElementById('setExchange').value;
+  document.getElementById('connStatus').innerHTML = '<span style="color:var(--text2)">Testing...</span>';
+  const d = await api('/api/test-connection', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ exchange }) });
+  if (d?.ok) {
+    document.getElementById('connStatus').innerHTML =
+      '<span class="connection-status conn-ok">Connected — ' + d.exchange + ' — $' + d.balance + ' USDT</span>';
+  } else {
+    document.getElementById('connStatus').innerHTML =
+      '<span class="connection-status conn-fail">Failed: ' + (d?.error || 'Not connected') + '</span>';
+  }
+}
+
+function toggleLive(el) {
+  if (el.checked) {
+    if (!confirm('LIVE TRADING WARNING\n\nThis will use REAL money.\nMake sure:\n- API keys are set\n- You tested connection\n- You understand the risks\n\nAre you absolutely sure?')) {
+      el.checked = false; return;
+    }
+    const typed = prompt('Type "I UNDERSTAND" to confirm:');
+    if (typed !== 'I UNDERSTAND') {
+      el.checked = false;
+      toast('Live mode cancelled', true); return;
+    }
+  }
+  const mode = el.checked ? 'live' : 'paper';
+  saveSettings({ trading_mode: mode });
+  document.getElementById('modeLabel').textContent = el.checked ? 'LIVE' : 'PAPER';
+  document.getElementById('modeLabel').style.color = el.checked ? 'var(--red)' : 'var(--gold)';
+}
+
+async function saveScanSettings() {
+  await saveSettings({
+    scan_interval_minutes: parseInt(document.getElementById('scanInt').textContent),
+    scan_top_n: parseInt(document.getElementById('scanN').textContent),
+    timeframe: document.getElementById('setTimeframe').value,
+    lookback: parseInt(document.getElementById('setLookback').textContent),
+    min_volume_usdt: parseFloat(document.getElementById('setMinVolume').value),
+  });
+}
+
+function onSniperToggle(on) {
+  if (on) {
+    document.getElementById('setMinScore').value = 85;
+    document.getElementById('minScoreVal').textContent = '85';
+  }
+}
+
+async function toggleSniperFromHome(on) {
+  await saveSettings({
+    strategy_mode: on ? 'sniper' : 'normal',
+    min_score: on ? 85 : 65,
+  });
+  // Sync the settings tab toggle too
+  const settingsToggle = document.getElementById('setSniperMode');
+  if (settingsToggle) settingsToggle.checked = on;
+  if (on) {
+    document.getElementById('setMinScore').value = 85;
+    document.getElementById('minScoreVal').textContent = '85';
+  }
+  // Update status label immediately
+  const sniperEl = document.getElementById('sSniper');
+  sniperEl.textContent = on ? 'ACTIVE' : 'OFF';
+  sniperEl.style.color = on ? '#ffd700' : '#888';
+  sniperEl.style.fontWeight = on ? '700' : '400';
+}
+
+async function saveSignalSettings() {
+  const sniperOn = document.getElementById('setSniperMode').checked;
+  await saveSettings({
+    strategy_mode: sniperOn ? 'sniper' : 'normal',
+    min_score: parseInt(document.getElementById('setMinScore').value),
+    min_rr_ratio: parseFloat(document.getElementById('setMinRR').textContent),
+    allow_short: document.getElementById('setShort').checked,
+    'scanner.enabled': document.getElementById('setBreakout').checked,
+    breakout_lookback: parseInt(document.getElementById('setBreakoutLookback').textContent),
+    breakout_volume_mult: parseFloat(document.getElementById('setBreakoutVolMult').textContent),
+  });
+}
+
+async function saveRiskSettings() {
+  await saveSettings({
+    risk_per_trade_percent: parseFloat(document.getElementById('setRisk').value),
+    max_open_positions: parseInt(document.getElementById('maxPos').textContent),
+    max_portfolio_risk_percent: parseFloat(document.getElementById('setPortRisk').textContent),
+    max_single_position_percent: parseFloat(document.getElementById('setSinglePos').textContent),
+    daily_loss_limit_percent: parseFloat(document.getElementById('setDailyLoss').textContent),
+    consecutive_loss_limit: parseInt(document.getElementById('setConsecLoss').textContent),
+  });
+}
+
+async function saveSentimentSettings() {
+  await saveSettings({
+    sentiment_threshold: parseInt(document.getElementById('setSentiment').textContent),
+    'scanner.enabled': document.getElementById('setScannerEnabled').checked,
+  });
+}
+
+async function saveConservativeSettings() {
+  await saveSettings({
+    'conservative_mode.enabled': document.getElementById('setConservative').checked,
+    'conservative_mode.consecutive_losses_trigger': parseInt(document.getElementById('cmLosses').textContent),
+    'conservative_mode.daily_loss_trigger_pct': parseInt(document.getElementById('cmDailyLoss').textContent),
+    'conservative_mode.drawdown_trigger_pct': parseInt(document.getElementById('cmDrawdown').textContent),
+    'conservative_mode.risk_reduction_pct': parseInt(document.getElementById('cmRiskCut').textContent),
+    'conservative_mode.wins_to_exit': parseInt(document.getElementById('cmWins').textContent),
+  });
+}
+
+async function saveHoursSettings() {
+  await saveSettings({
+    'trading_hours.enabled': document.getElementById('setHours').checked,
+    'trading_hours.avoid_hours_utc': getAvoidHours(),
+  });
+}
+
+async function testNotif(platform) {
+  const d = await api('/api/test-notification', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ platform, channel: 'general' })
+  });
+  toast(d?.success ? (d.message || 'Sent!') : (d?.message || 'Failed'), !d?.success);
+}
+
+async function saveNotifications() {
+  const generalUrl = document.getElementById('dcGeneral').value.trim();
+  await saveSettings({
+    'notifications.discord.enabled': document.getElementById('discordEnabled').checked,
+    'notifications.discord.channels': {
+      general: generalUrl,
+      trades: document.getElementById('dcTrades').value.trim() || generalUrl,
+      closed: document.getElementById('dcClosed').value.trim() || generalUrl,
+      reports: document.getElementById('dcReports').value.trim() || generalUrl,
+      warnings: document.getElementById('dcWarnings').value.trim() || generalUrl,
+    },
+    'notifications.telegram.enabled': document.getElementById('tgEnabled').checked,
+    'notifications.telegram.bot_token': document.getElementById('tgToken').value,
+    'notifications.telegram.chat_id': document.getElementById('tgChatId').value,
+    'notifications.custom.enabled': document.getElementById('customEnabled').checked,
+    'notifications.custom.webhook_url': document.getElementById('customUrl').value,
+  });
+}
+
+async function saveIdentitySettings() {
+  await saveSettings({
+    account_name: document.getElementById('setAccountName').value,
+    paper_start_balance_usdt: parseFloat(document.getElementById('setPaperBalance').value),
+    base_balance: parseFloat(document.getElementById('setBaseBalance').value),
+    lang: document.getElementById('setLang').value,
+  });
+}
+
+// ── Committee Tab ─────────────────────────────────────────────────
+async function loadCommittee() {
+  const d = await api('/api/committee/history');
+  if (!d) return;
+  committeeData = d;
+
+  // Agent accuracy leaderboard
+  const accEl = document.getElementById('agentAccuracy');
+  const acc = d.agent_accuracy || {};
+  const agents = Object.entries(acc).sort((a, b) => b[1].accuracy - a[1].accuracy);
+
+  if (agents.length === 0) {
+    accEl.innerHTML = '<p style="color:var(--text2);font-size:13px">Need 10+ decisions to calculate accuracy</p>';
+  } else {
+    const medals = ['🥇', '🥈', '🥉', '  ', '  '];
+    accEl.innerHTML = agents.map((a, i) => {
+      const [name, stats] = a;
+      const barW = Math.min(stats.accuracy, 100);
+      const color = stats.accuracy >= 75 ? 'var(--green)' : stats.accuracy >= 60 ? 'var(--gold)' : 'var(--red)';
+      return `<div class="agent-row">
+        <span style="width:24px">${medals[i] || '  '}</span>
+        <span class="agent-name">${name}</span>
+        <div class="agent-bar"><div class="agent-bar-fill" style="width:${barW}%;background:${color}"></div></div>
+        <span class="agent-pct" style="color:${color}">${stats.accuracy.toFixed(1)}%</span>
+      </div>`;
+    }).join('') + `<div style="font-size:11px;color:var(--text2);margin-top:8px;text-align:center">${agents[0]?.[1]?.decisions || 0} decisions analyzed</div>`;
+  }
+
+  // Veto stats
+  const vs = d.veto_stats || {};
+  const vetoEl = document.getElementById('vetoStats');
+  if (vs.total_vetoes > 0) {
+    vetoEl.style.display = 'block';
+    const byAgent = vs.by_agent || {};
+    const byAgentStr = Object.entries(byAgent).map(([a, c]) => `${a}: ${c}`).join(' · ');
+    document.getElementById('vetoText').innerHTML =
+      `🚫 Vetoes: <b>${vs.total_vetoes}</b> total` +
+      (byAgentStr ? ` · ${byAgentStr}` : '');
+  } else {
+    vetoEl.style.display = 'none';
+  }
+
+  renderCommitteeList(d.decisions || []);
+}
+
+function filterCommittee(filter, btn) {
+  committeeFilter = filter;
+  document.querySelectorAll('#committeeFilters .filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (committeeData) renderCommitteeList(committeeData.decisions || []);
+}
+
+function renderCommitteeList(decisions) {
+  const container = document.getElementById('committeeList');
+  let filtered = decisions;
+
+  if (committeeFilter === 'approved') filtered = decisions.filter(d => d.approved && !d.veto_by);
+  else if (committeeFilter === 'vetoed') filtered = decisions.filter(d => d.veto_by);
+  else if (committeeFilter === 'rejected') filtered = decisions.filter(d => !d.approved && !d.veto_by);
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty-state" style="padding:30px">No decisions yet</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(d => {
+    const isVetoed = !!d.veto_by;
+    const isApproved = d.approved && !isVetoed;
+    const cardClass = isVetoed ? 'vetoed' : isApproved ? 'approved' : 'rejected';
+
+    let icon, label, pnlStr = '';
+    if (isVetoed) {
+      icon = '🚫'; label = `VETOED · ${d.veto_by}`;
+    } else if (isApproved) {
+      icon = d.trade_outcome === 'WIN' ? '✅' : d.trade_outcome === 'LOSS' ? '❌' : '⏳';
+      const outcomeLabel = d.trade_outcome || 'PENDING';
+      pnlStr = d.trade_pnl != null ? ` ${d.trade_pnl >= 0 ? '+' : ''}$${d.trade_pnl.toFixed(2)}` : '';
+      label = `${d.final_score.toFixed(1)}/100 ${pnlStr} ${outcomeLabel}`;
+    } else {
+      icon = '❌'; label = `${d.final_score.toFixed(1)}/100 REJECTED`;
+    }
+
+    const ts = d.timestamp ? new Date(d.timestamp * 1000).toLocaleString() : '';
+
+    // Verdicts detail
+    const verdicts = d.verdicts || {};
+    const verdictRows = Object.entries(verdicts).map(([name, v]) => {
+      const score = typeof v === 'object' ? (v.score || 0) : 0;
+      const rec = typeof v === 'object' ? (v.rec || '-') : v;
+      const recColor = rec === 'BUY' || rec === 'SELL' ? 'var(--green)' : 'var(--text2)';
+      return `<div class="verdict-row">
+        <span>${name}</span>
+        <span style="font-family:var(--mono)">${score}</span>
+        <span style="color:${recColor};font-weight:600">${rec}</span>
+      </div>`;
+    }).join('');
+
+    const vetoReason = isVetoed && d.veto_reason ? `<div style="font-size:12px;color:var(--red);margin-top:4px">Reason: ${d.veto_reason}</div>` : '';
+
+    return `<div class="decision-card ${cardClass}" onclick="this.querySelector('.decision-details').classList.toggle('open')">
+      <div class="decision-header">
+        <div>
+          <span style="font-size:14px">${icon}</span>
+          <span style="font-weight:700;margin:0 6px">${d.symbol}</span>
+          <span style="font-size:12px;color:var(--text2)">${label}</span>
+        </div>
+        <span style="font-size:11px;color:var(--text2)">▼</span>
+      </div>
+      <div class="decision-details">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${ts}</div>
+        ${verdictRows}
+        ${vetoReason}
+        ${d.trade_outcome ? `<div style="font-size:12px;margin-top:6px;color:${d.trade_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">Result: ${pnlStr} ${d.trade_outcome}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Countdown timer
+setInterval(() => {
+  if (nextScanSec > 0) nextScanSec--;
+  document.getElementById('sNextScan').textContent = fmtTime(nextScanSec);
+}, 1000);
+
+// Auto refresh
+async function refresh() {
+  await loadStatus();
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+  if (activeTab === 'trades' || activeTab === 'home') await loadPositions();
+}
+
+refresh();
+fetchLivePrices();
+setInterval(refresh, 30000);
+setInterval(fetchLivePrices, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Environment & Config
+.env
+LIVE_OK.txt
+config.yaml
+!config.yaml.example
+
+# Runtime & Data
+swingbot.db
+logs/
+reports/out/
+*.log
+
+# Local artifacts
+output.txt
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/

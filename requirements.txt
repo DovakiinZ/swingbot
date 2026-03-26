@@ -1,0 +1,10 @@
+ccxt
+pandas
+ta
+pyyaml
+python-dotenv
+requests
+numpy
+flask>=3.0.0
+scikit-learn>=1.3.0
+schedule
