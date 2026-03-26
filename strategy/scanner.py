@@ -95,25 +95,40 @@ class MarketScanner:
         # -- Trend Alignment (30 pts) --
         ema_fast = curr.get('ema_fast', 0)
         ema_slow = curr.get('ema_slow', 0)
+        # Award 15 pts for a clear trend in either direction
         if ema_fast and ema_slow and ema_fast > ema_slow:
-            score += 15
+            score += 15   # Uptrend (long bias)
+        elif ema_fast and ema_slow and ema_fast < ema_slow:
+            score += 15   # Downtrend (short bias)
+        # Price vs EMA slow: award for alignment in either direction
         if ema_slow and curr['close'] > ema_slow:
-            score += 8
+            score += 8    # Price above — bullish
+        elif ema_slow and curr['close'] < ema_slow:
+            score += 8    # Price below — bearish
         macd = curr.get('macd', None)
         macd_sig = curr.get('macd_signal', None)
-        if macd is not None and macd_sig is not None and macd > macd_sig:
-            score += 7
+        if macd is not None and macd_sig is not None:
+            if macd > macd_sig:
+                score += 7   # Bullish momentum
+            elif macd < macd_sig:
+                score += 7   # Bearish momentum
 
         # -- RSI Momentum (25 pts) --
         rsi = curr.get('rsi', 50)
         if pd.isna(rsi):
             rsi = 50
+        # Long setups (oversold)
         if 20 <= rsi <= 35:
-            score += 25   # Deep oversold
+            score += 25   # Deep oversold — strong long signal
         elif 35 < rsi <= 45:
             score += 15   # Approaching oversold
         elif 45 < rsi <= 52:
             score += 5    # Neutral
+        # Short setups (overbought)
+        elif 65 <= rsi <= 80:
+            score += 15   # Approaching overbought — short signal
+        elif rsi > 80:
+            score += 25   # Deep overbought — strong short signal
 
         # -- Breakout Setup (25 pts) --
         breakout_score, breakout_detected = self._score_breakout(df)

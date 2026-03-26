@@ -4,7 +4,7 @@ import copy
 # Base defaults
 DEFAULT_PARAMS = StrategyParams(
     rsi_period=14,
-    rsi_entry=30,
+    rsi_entry=35,   # Was 30 — too strict, misses RSI 30-35 oversold bounces
     rsi_exit=70,
     ema_fast=20,
     ema_slow=50,
@@ -41,7 +41,7 @@ ARMS.append(params)
 # Arm 5: Tight Scalp
 params = copy.deepcopy(DEFAULT_PARAMS)
 params.sl_mult = 1.5
-params.tp_mult = 2.0
+params.tp_mult = 3.0   # R:R = 2.0 (was 2.0 -> 1.33, now fixed)
 ARMS.append(params)
 
 # Arm 6: Golden Cross focus (Slow Trend)
@@ -58,8 +58,9 @@ ARMS.append(params)
 
 # Arm 8: High Volatility Setup
 params = copy.deepcopy(DEFAULT_PARAMS)
-params.rsi_entry = 20 # Deep oversold
-params.sl_mult = 4.0  # Wide stop
+params.rsi_entry = 20  # Deep oversold
+params.sl_mult = 4.0   # Wide stop
+params.tp_mult = 8.0   # R:R = 2.0 (was 3.0 -> 0.75, now fixed)
 ARMS.append(params)
 
 def get_arm(index: int) -> StrategyParams:

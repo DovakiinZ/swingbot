@@ -11,9 +11,7 @@ class Clock:
         self.simulated_time_ms: int = 0
 
     def now_ms(self) -> int:
-        if self.mode == "paper":
-            if self.simulated_time_ms == 0:
-                raise ValueError("Simulated time not set for paper trading")
+        if self.mode == "paper" and self.simulated_time_ms != 0:
             return self.simulated_time_ms
         return int(time.time() * 1000)
 

@@ -167,7 +167,8 @@ class SwingbotModel:
             logger.error(f"[ML] Prediction failed: {e}")
             return 0.0, False
 
-    def should_enter(self, features: dict, scanner_score: float) -> Tuple[bool, float, str]:
+    def should_enter(self, features: dict, scanner_score: float,
+                     min_score: float = 55) -> Tuple[bool, float, str]:
         """
         Full entry gate combining scanner score + model confidence.
         Only enter when BOTH the scanner AND the model agree.
@@ -175,7 +176,7 @@ class SwingbotModel:
         """
         if not self.is_trained:
             # Fall back to scanner-only if model not yet trained
-            enter = scanner_score >= 65
+            enter = scanner_score >= min_score
             return enter, 0.0, "scanner_only (model not trained yet)"
 
         confidence, model_ok = self.predict(features)
@@ -183,7 +184,7 @@ class SwingbotModel:
         if not model_ok:
             return False, confidence, f"model confidence too low ({confidence:.0%})"
 
-        if scanner_score < 65:
+        if scanner_score < min_score:
             return False, confidence, f"scanner score too low ({scanner_score:.0f})"
 
         return True, confidence, f"model={confidence:.0%} score={scanner_score:.0f}"

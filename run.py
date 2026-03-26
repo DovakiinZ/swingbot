@@ -31,7 +31,7 @@ from data.features import FeatureEngine
 from storage.sqlite_store import SQLiteStore
 from strategy.rsi_ema import RsiEmaStrategy
 from strategy.regimes import RegimeDetector
-from strategy.scanner import MarketScanner, MIN_SCORE
+from strategy.scanner import MarketScanner
 from risk.risk_engine import RiskEngine
 from risk.circuit_breakers import CircuitBreaker
 from execution.broker_paper import PaperBroker
@@ -67,6 +67,7 @@ clock  = Clock(mode="live")
 logger = logging.getLogger("swingbot")
 
 SCAN_TOP_N = CONFIG.get('scan_top_n', 20)
+MIN_SCORE  = CONFIG.get('min_score', 55)   # Read from config, not hardcoded
 
 
 # --- Entry Checklist ----------------------------------------------------------
@@ -868,7 +869,7 @@ def main():
                 )
 
                 enter, confidence, ml_reason = ml_model.should_enter(
-                    ml_features, cand_score
+                    ml_features, cand_score, min_score=MIN_SCORE
                 )
 
                 if not enter:

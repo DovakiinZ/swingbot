@@ -80,11 +80,12 @@ class FeatureEngine:
         prev = df.iloc[-2] if len(df) > 1 else curr
 
         def safe(val, default=0.0):
-            if val is None or (isinstance(val, float) and (pd.isna(val) or not pd.isfinite(val))):
+            import math
+            if val is None:
                 return default
             try:
                 v = float(val)
-                if pd.isna(v) or not pd.isfinite(v):
+                if math.isnan(v) or not math.isfinite(v):
                     return default
                 return v
             except (TypeError, ValueError):

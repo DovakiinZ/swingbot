@@ -144,8 +144,8 @@ class RiskEngine:
         limits = market_structure.get('limits', {})
         cost = size * price
 
-        min_cost = limits.get('cost', {}).get('min', 0)
-        min_amount = limits.get('amount', {}).get('min', 0)
+        min_cost = limits.get('cost', {}).get('min') or 0
+        min_amount = limits.get('amount', {}).get('min') or 0
 
         if cost < min_cost:
             return False, f"Cost {cost} < Min {min_cost}"
