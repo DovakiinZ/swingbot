@@ -264,19 +264,26 @@ def main():
     setup_logging(console_level=log_level_console, file_level=log_level_file)
 
     # --- Components -----------------------------------------------------------
-    primary_exchange = CONFIG.get('primary_exchange', 'bybit')
-    market = MarketData(exchange_id=primary_exchange, sandbox=False)
+    # Exchange architecture:
+    #   trading_exchange   → where orders are placed (MEXC, user account)
+    #   market_data_exchange → where we READ prices/candles/funding (Bybit default)
+    #   Bybit + Binance used as read-only market indicators via public API only
+    trading_exchange    = CONFIG.get('trading_exchange', 'mexc')
+    data_exchange       = CONFIG.get('market_data_exchange', 'bybit')
+
+    market      = MarketData(exchange_id=data_exchange, sandbox=False)   # data source
+    market_mexc = MarketData(exchange_id='mexc', sandbox=False)          # MEXC symbol check
 
     if is_live:
-        if primary_exchange == 'bybit':
+        if trading_exchange == 'mexc':
+            broker = MexcBroker(store, market_mexc)
+        elif trading_exchange == 'bybit':
             account_type = CONFIG.get('bybit_account_type', 'spot')
             broker = BybitBroker(store, market, account_type=account_type)
-        elif primary_exchange == 'binance':
+        elif trading_exchange == 'binance':
             broker = BinanceBroker(store, market)
-        elif primary_exchange == 'mexc':
-            broker = MexcBroker(store, market)
         else:
-            raise ValueError(f"Unknown exchange: {primary_exchange}")
+            raise ValueError(f"Unknown trading exchange: {trading_exchange}")
     else:
         init_bal = CONFIG.get('paper_start_balance_usdt', 1000.0)
         broker = PaperBroker(store, clock, initial_balance=init_bal)
@@ -305,7 +312,7 @@ def main():
     bandit          = Bandit(store, exploration_prob=CONFIG['bandit']['exploration_prob'])
     reporter        = DailyReport(store)
     sentiment_engine = SentimentEngine()
-    selector        = SymbolSelector(market.exchange, market=market)
+    selector        = SymbolSelector(market.exchange, market=market)   # uses data exchange (Bybit)
     ml_model        = SwingbotModel()
 
     # Triple-Barrier labeler for richer training data
@@ -377,7 +384,7 @@ def main():
         max_dd=CONFIG['daily_loss_limit_percent'],
         max_loss_run=CONFIG['consecutive_loss_limit']
     ))
-    print(f"Exchange: {primary_exchange.upper()} | Scan interval: {CONFIG.get('scan_interval_minutes', 10)}m")
+    print(f"Trading: {trading_exchange.upper()} | Data: {data_exchange.upper()} | Scan: {CONFIG.get('scan_interval_minutes', 10)}m")
     print(f"Short selling: {'ENABLED' if allow_short else 'DISABLED'}")
     print(f"ML Model: {'LOADED' if ml_model.is_trained else 'NOT TRAINED (scanner-only mode)'}")
     print(f"Triple-Barrier: {'ENABLED' if tb_labeler else 'DISABLED'}")
@@ -831,6 +838,13 @@ def main():
                 return
 
             # -- Open positions for top candidates -----------------------------
+            htf_timeframe  = CONFIG.get('htf_timeframe', '4h')
+            htf_ema_period = CONFIG.get('htf_ema_period', 200)
+            mtf_enabled    = CONFIG.get('mtf_filter_enabled', True)
+            funding_filter = CONFIG.get('funding_rate_filter', True)
+            funding_long_block  = CONFIG.get('funding_long_block', 0.0008)   # 0.08%/8h
+            funding_short_block = CONFIG.get('funding_short_block', -0.0005) # -0.05%/8h
+
             entries_opened = 0
             for candidate in scored[:slots_available]:
                 sym    = candidate['symbol']
@@ -845,6 +859,39 @@ def main():
                 sig = strategy.check_signal(df, regime, params,
                                             current_position=None, symbol=sym,
                                             allow_short=allow_short)
+
+                # -- 4H Multi-Timeframe confluence filter ----------------------
+                # Research: HTF filter raises Profit Factor from ~1.4 to ~2.0+
+                # Only take 1H longs when 4H trend is up, shorts when 4H is down
+                if mtf_enabled and sig is not None:
+                    try:
+                        htf = market.fetch_htf_trend(sym, htf_timeframe, htf_ema_period)
+                        htf_trend = htf.get('trend', 'flat')
+                        if sig.side.value == 'BUY' and htf_trend == 'down':
+                            logger.warning(f"[MTF_SKIP] {sym}: 1H long blocked — {htf_timeframe} trend is DOWN")
+                            continue
+                        if sig.side.value == 'SELL' and htf_trend == 'up':
+                            logger.warning(f"[MTF_SKIP] {sym}: 1H short blocked — {htf_timeframe} trend is UP")
+                            continue
+                    except Exception:
+                        pass   # MTF check optional — don't block on error
+
+                # -- Funding Rate filter (Bybit public API, perps only) ---------
+                # Positive funding = longs overcrowded → avoid longs
+                # Negative funding = shorts overcrowded → avoid shorts
+                if funding_filter and sig is not None and ':' in sym:
+                    try:
+                        fr = market.fetch_funding_rate(sym)
+                        if fr is not None:
+                            if sig.side.value == 'BUY' and fr > funding_long_block:
+                                logger.warning(f"[FR_SKIP] {sym}: long blocked — funding={fr:.4%} (longs overcrowded)")
+                                continue
+                            if sig.side.value == 'SELL' and fr < funding_short_block:
+                                logger.warning(f"[FR_SKIP] {sym}: short blocked — funding={fr:.4%} (shorts overcrowded)")
+                                continue
+                            status['funding_rate'] = fr
+                    except Exception:
+                        pass   # Funding rate optional — don't block on error
 
                 # Entry checklist gate
                 passed, reason = _passes_entry_checklist(

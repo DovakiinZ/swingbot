@@ -4,13 +4,13 @@ import copy
 # Base defaults
 DEFAULT_PARAMS = StrategyParams(
     rsi_period=14,
-    rsi_entry=35,   # Was 30 — too strict, misses RSI 30-35 oversold bounces
+    rsi_entry=35,    # Was 30 — too strict, misses RSI 30-35 oversold bounces
     rsi_exit=70,
     ema_fast=20,
     ema_slow=50,
     atr_period=14,
     sl_mult=2.0,
-    tp_mult=3.0
+    tp_mult=5.0      # Was 3.0 (R:R=1.5). Now 2.5:1 — research minimum for breakout profitability
 )
 
 # Define 8-20 arms
@@ -32,16 +32,16 @@ params.rsi_period = 21
 params.rsi_entry = 25
 ARMS.append(params)
 
-# Arm 4: Wider Stops (Trend Following)
+# Arm 4: Wide stops, big targets — trend-following mode, sl=3.0/tp=8.0 → R:R=2.67
 params = copy.deepcopy(DEFAULT_PARAMS)
 params.sl_mult = 3.0
-params.tp_mult = 5.0
+params.tp_mult = 8.0
 ARMS.append(params)
 
-# Arm 5: Tight Scalp
+# Arm 5: Tight scalp — fast entries, sl=1.5/tp=4.0 → R:R=2.67
 params = copy.deepcopy(DEFAULT_PARAMS)
 params.sl_mult = 1.5
-params.tp_mult = 3.0   # R:R = 2.0 (was 2.0 -> 1.33, now fixed)
+params.tp_mult = 4.0
 ARMS.append(params)
 
 # Arm 6: Golden Cross focus (Slow Trend)
@@ -56,11 +56,11 @@ params.ema_fast = 9
 params.ema_slow = 21
 ARMS.append(params)
 
-# Arm 8: High Volatility Setup
+# Arm 8: High Volatility — deep oversold only, sl=4.0/tp=10.0 → R:R=2.5
 params = copy.deepcopy(DEFAULT_PARAMS)
-params.rsi_entry = 20  # Deep oversold
-params.sl_mult = 4.0   # Wide stop
-params.tp_mult = 8.0   # R:R = 2.0 (was 3.0 -> 0.75, now fixed)
+params.rsi_entry = 20   # Deep oversold only
+params.sl_mult   = 4.0  # Wide stop for volatile assets
+params.tp_mult   = 10.0 # Big target to compensate wide stop
 ARMS.append(params)
 
 def get_arm(index: int) -> StrategyParams:
