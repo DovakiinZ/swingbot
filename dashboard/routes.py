@@ -270,6 +270,12 @@ def create_app(store=None, state=None, config: dict = None):
             'phase_progress_pct': round(phase_progress, 1),
             'last_updated': snapshot.get('last_cycle', ''),
             'goal_tracker': goal_data,
+            'websocket': snapshot.get('websocket', {
+                'connected': False,
+                'symbols_monitored': 0,
+                'momentum_signals_today': 0,
+                'last_momentum': '—',
+            }),
         })
 
     @app.route("/api/positions")

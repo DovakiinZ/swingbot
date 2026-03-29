@@ -10,6 +10,7 @@ Strategy   : multi-symbol portfolio scan with scored setups
 import argparse
 import time
 import threading
+import queue
 from datetime import datetime
 import sys
 import os
@@ -53,6 +54,13 @@ from core.notifier import Notifier
 from core.trading_hours import is_good_time_to_trade
 from risk.conservative_mode import ConservativeMode
 from reports.weekly_report import WeeklyReport
+from strategy.momentum_breakout import MomentumBreakoutStrategy
+
+# WebSocket monitor — optional dependency
+try:
+    from data.websocket_monitor import WebSocketMonitor, WS_AVAILABLE
+except ImportError:
+    WS_AVAILABLE = False
 
 # --- Config -------------------------------------------------------------------
 load_dotenv()
@@ -333,6 +341,50 @@ def main():
     weekly_report     = WeeklyReport(store, CONFIG)
     goal_tracker      = GoalTracker(CONFIG, store)
 
+    # -- Momentum Strategy -------------------------------------------------
+    momentum_strategy = MomentumBreakoutStrategy(
+        min_price_change=CONFIG.get('momentum_min_change', 0.003),
+        min_volume_ratio=CONFIG.get('momentum_min_volume', 2.0),
+        sl_atr_mult=CONFIG.get('momentum_sl_mult', 1.5),
+        tp_atr_mult=CONFIG.get('momentum_tp_mult', 2.5),
+        cooldown_seconds=CONFIG.get('momentum_cooldown_sec', 300),
+    )
+
+    # -- Momentum signal queue (thread-safe) --------------------------------
+    momentum_queue = queue.Queue(maxsize=50)
+
+    def on_momentum_detected(symbol, direction, price,
+                              price_change_pct, volume_ratio, timestamp):
+        """Called from WebSocket thread — puts signal in queue for main thread."""
+        try:
+            momentum_queue.put_nowait({
+                'symbol':           symbol,
+                'direction':        direction,
+                'price':            price,
+                'price_change_pct': price_change_pct,
+                'volume_ratio':     volume_ratio,
+                'timestamp':        timestamp,
+            })
+        except queue.Full:
+            pass   # Drop if queue full — never block WebSocket thread
+
+    # -- Start WebSocket monitor -------------------------------------------
+    ws_monitor = None
+    ws_config = CONFIG.get('websocket', {})
+    if WS_AVAILABLE and ws_config.get('enabled', False):
+        initial_symbols = ws_config.get(
+            'symbols',
+            ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
+        )
+        ws_monitor = WebSocketMonitor(
+            symbols=initial_symbols,
+            on_momentum=on_momentum_detected,
+            momentum_threshold=CONFIG.get('momentum_min_change', 0.003),
+            volume_multiplier=CONFIG.get('momentum_min_volume', 2.0),
+        )
+        ws_monitor.start()
+        logger.warning(f"[WS] Monitoring {len(initial_symbols)} symbols in real-time")
+
     poly_client = None
     if CONFIG.get('polymarket', {}).get('enabled', False):
         poly_client = PolymarketClient()
@@ -362,6 +414,12 @@ def main():
         "macro_scale": 1.0,
         "ai_confidence": None,
         "is_live": is_live,
+        "websocket": {
+            "connected": False,
+            "symbols_monitored": 0,
+            "momentum_signals_today": 0,
+            "last_momentum": "—",
+        },
     }
 
     # --- Dashboard start ------------------------------------------------------
@@ -388,6 +446,7 @@ def main():
     print(f"Short selling: {'ENABLED' if allow_short else 'DISABLED'}")
     print(f"ML Model: {'LOADED' if ml_model.is_trained else 'NOT TRAINED (scanner-only mode)'}")
     print(f"Triple-Barrier: {'ENABLED' if tb_labeler else 'DISABLED'}")
+    print(f"WebSocket Momentum: {'ENABLED' if ws_monitor else 'DISABLED'}")
 
     if scanner_enabled:
         print(f"Scanner: ENABLED | Max Positions: {max_positions}")
@@ -594,6 +653,146 @@ def main():
             dashboard_state['sentiment_ok'] = sentiment_ok
             dashboard_state['sniper_mode'] = SNIPER_MODE
             dashboard_state['breaker_status'] = status['breaker']
+
+            # Update WebSocket status in dashboard
+            if ws_monitor:
+                dashboard_state['websocket'] = ws_monitor.get_status()
+
+            # ==================================================================
+            # PHASE 0 — Process momentum signals from WebSocket (PRIORITY)
+            # These fire immediately — don't wait for the 10-min cycle
+            # ==================================================================
+            momentum_signals_processed = 0
+
+            while not momentum_queue.empty() and momentum_signals_processed < 5:
+                try:
+                    event = momentum_queue.get_nowait()
+                    momentum_signals_processed += 1
+
+                    sym = event['symbol']
+
+                    # Skip if already have position
+                    current_open = broker.get_open_positions()
+                    if any(p.symbol == sym for p in current_open):
+                        continue
+
+                    # Skip if slots full
+                    if len(current_open) >= risk_engine.max_open_positions:
+                        continue
+
+                    # Circuit breaker check
+                    if not circuit_breaker_ok:
+                        continue
+
+                    # Daily loss limit check
+                    if day_pnl < -(current_bal * CONFIG['daily_loss_limit_percent'] / 100):
+                        continue
+
+                    # Get current ATR for this symbol
+                    try:
+                        candles = market.fetch_ohlcv(sym, CONFIG['timeframe'], limit=50)
+                        if not candles:
+                            continue
+                        df = FeatureEngine.compute_indicators(candles)
+                        if df.empty:
+                            continue
+                        atr = float(df.iloc[-1].get('atr', event['price'] * 0.01))
+                        atr_pct = float(df.iloc[-1].get('atr_percent', 1.0))
+                    except Exception:
+                        atr     = event['price'] * 0.01
+                        atr_pct = 1.0
+
+                    # Generate momentum signal
+                    sig = momentum_strategy.process_momentum_event(
+                        symbol=sym,
+                        direction=event['direction'],
+                        price=event['price'],
+                        price_change_pct=event['price_change_pct'],
+                        volume_ratio=event['volume_ratio'],
+                        atr=atr,
+                        atr_pct=atr_pct,
+                        timestamp=event['timestamp'],
+                        allow_short=CONFIG.get('allow_short', True)
+                    )
+
+                    if not sig:
+                        continue
+
+                    # Size the position
+                    confidence = sig.strength
+                    reserved   = sum(p.entry_price * p.amount for p in current_open)
+
+                    # Dynamic compounding risk for momentum trades
+                    base_balance = CONFIG.get('base_balance', 100.0)
+                    mom_score = momentum_strategy.calculate_confidence_score(
+                        event['price_change_pct'], event['volume_ratio']
+                    )
+                    dynamic_risk = risk_engine.get_dynamic_risk_percent(
+                        current_balance=current_bal,
+                        base_balance=base_balance,
+                        setup_score=mom_score,
+                        peak_balance=peak_balance
+                    )
+
+                    base_size = risk_engine.calculate_position_size(
+                        sig, reserved_capital=reserved, dynamic_risk_pct=dynamic_risk
+                    )
+
+                    if base_size <= 0:
+                        continue
+
+                    # Notional check
+                    market_struct = market.get_market_structure(sym)
+                    ok_notional, msg = risk_engine.check_min_notional(base_size, sig.price, market_struct)
+                    if not ok_notional:
+                        logger.warning(f"[MOMENTUM SKIP] {sym}: {msg}")
+                        continue
+
+                    # Portfolio risk check
+                    ok, msg = risk_engine.can_open_position_for_symbol(
+                        sym, current_open, base_size, sig.price
+                    )
+                    if not ok:
+                        logger.warning(f"[MOMENTUM SKIP] {sym}: {msg}")
+                        continue
+
+                    # EXECUTE
+                    side_str = "BUY" if sig.side == Side.BUY else "SELL(SHORT)"
+                    logger.warning(
+                        f"[MOMENTUM {side_str}] {sym} | "
+                        f"price={sig.price:.4f} | size={base_size:.6f} | "
+                        f"change={event['price_change_pct']:+.3%} | "
+                        f"vol={event['volume_ratio']:.1f}x | "
+                        f"risk={dynamic_risk:.1f}%"
+                    )
+                    order = broker.place_order(sig, base_size)
+                    if order:
+                        # Save ML features for training
+                        try:
+                            ml_features = FeatureEngine.extract_ml_features(
+                                df=df,
+                                scanner_score=mom_score,
+                                breakout_detected=False,
+                                macro_scale=status.get('risk_scale', 1.0),
+                                fear_greed=sentiment_engine.get_score() if hasattr(sentiment_engine, 'get_score') else 50.0
+                            )
+                            ml_features['trade_id'] = order.id
+                            ml_features['symbol'] = sym
+                            store.save_trade_features(ml_features)
+                        except Exception:
+                            pass
+
+                        try:
+                            notifier.notify_entry(sym, sig, base_size, mom_score, 0)
+                        except Exception:
+                            pass
+                        status['pos_state'] = "OPENING"
+
+                except Exception as e:
+                    logger.error(f"[MOMENTUM] Processing error: {e}", exc_info=True)
+
+            if momentum_signals_processed > 0:
+                logger.warning(f"[MOMENTUM] Processed {momentum_signals_processed} momentum signal(s)")
 
             # -- Get all open positions ----------------------------------------
             open_positions = broker.get_open_positions()
@@ -802,6 +1001,12 @@ def main():
 
             scored.sort(key=lambda x: x['score'], reverse=True)
             all_scanned.sort(key=lambda x: x['score'], reverse=True)
+
+            # Update WebSocket symbols after scan
+            if ws_monitor and all_scanned:
+                top_ws_symbols = [s['symbol'] for s in all_scanned[:10]]
+                ws_monitor.update_symbols(top_ws_symbols)
+                logger.debug(f"[WS] Updated monitoring: {top_ws_symbols[:5]}...")
 
             # Save scan results to dashboard (show top results even if below MIN_SCORE)
             display_results = scored if scored else all_scanned[:5]
