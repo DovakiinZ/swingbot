@@ -1,11 +1,12 @@
 """
 data/websocket_monitor.py — Real-time price monitoring via WebSocket.
 
-Connects to MEXC WebSocket and streams live price ticks.
-Runs in a background thread alongside the main bot loop.
-Feeds price data to the MomentumDetector for instant signal generation.
+Connects to Binance public WebSocket (no auth needed) and streams
+live aggregated trades. Runs in a background thread alongside the
+main bot loop. Detects momentum spikes for instant signal generation.
 
-MEXC WebSocket docs: https://mexcdevelop.github.io/apidocs/spot_v3_en/
+Note: Binance WebSocket is used as a READ-ONLY data source.
+Trading still happens on MEXC via the broker.
 """
 
 import json
@@ -33,20 +34,18 @@ class PriceTick:
     price:     float
     volume:    float
     timestamp: float   # Unix timestamp in seconds
-    bid:       float = 0.0
-    ask:       float = 0.0
 
 
 class WebSocketMonitor:
     """
-    Monitors real-time prices for multiple symbols via MEXC WebSocket.
+    Monitors real-time prices for multiple symbols via Binance public WebSocket.
     Maintains a rolling price history for momentum calculation.
     Calls callback function when momentum spike detected.
     """
 
-    MEXC_WS_URL = "wss://wbs.mexc.com/ws"
+    BINANCE_WS_URL = "wss://stream.binance.com:9443/ws"
     RECONNECT_DELAY = 5    # seconds before reconnect attempt
-    HISTORY_SIZE    = 60   # keep last 60 ticks per symbol (~1 minute)
+    HISTORY_SIZE    = 120  # keep last 120 ticks per symbol
 
     def __init__(
         self,
@@ -55,8 +54,10 @@ class WebSocketMonitor:
         momentum_threshold: float = 0.003,   # 0.3% move = momentum signal
         volume_multiplier: float = 2.0       # Volume must be 2x average
     ):
-        self.symbols            = [s.replace('/', '') for s in symbols]
-        self.symbol_map         = {s.replace('/', ''): s for s in symbols}  # BTCUSDT -> BTC/USDT
+        # Binance uses lowercase: btcusdt
+        self.symbols            = [s.replace('/', '').lower() for s in symbols]
+        # Map lowercase back to original format: btcusdt -> BTC/USDT
+        self.symbol_map         = {s.replace('/', '').lower(): s for s in symbols}
         self.on_momentum        = on_momentum
         self.momentum_threshold = momentum_threshold
         self.volume_multiplier  = volume_multiplier
@@ -69,7 +70,6 @@ class WebSocketMonitor:
         self.ws = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
-        self._last_ping = time.time()
         self._momentum_signals_today = 0
         self._last_momentum_info = ""
         self._connected = False
@@ -115,73 +115,48 @@ class WebSocketMonitor:
     def _connect(self) -> None:
         """Create and run WebSocket connection."""
         self.ws = websocket.WebSocketApp(
-            self.MEXC_WS_URL,
+            self.BINANCE_WS_URL,
             on_open=self._on_open,
             on_message=self._on_message,
             on_error=self._on_error,
             on_close=self._on_close,
         )
-        # MEXC handles ping/pong at application level (text "ping"/"pong"),
-        # not at WebSocket protocol level — disable library-level pings
-        self.ws.run_forever(ping_interval=0)
+        self.ws.run_forever(ping_interval=20, ping_timeout=10)
 
     def _on_open(self, ws) -> None:
-        """Subscribe to deals (real-time trades) for all monitored symbols."""
-        logger.warning(f"[WS] Connected — subscribing to {len(self.symbols)} symbols")
+        """Subscribe to aggTrade streams for all monitored symbols."""
+        logger.warning(f"[WS] Connected to Binance — subscribing to {len(self.symbols)} symbols")
         self._connected = True
 
-        # Batch all subscriptions into one message (MEXC requirement)
-        params = [f"spot@public.deals.v3.api@{symbol}" for symbol in self.symbols]
+        # Binance: subscribe to aggregated trades for each symbol
+        params = [f"{symbol}@aggTrade" for symbol in self.symbols]
         subscribe_msg = {
-            "method": "SUBSCRIPTION",
-            "params": params
+            "method": "SUBSCRIBE",
+            "params": params,
+            "id": 1
         }
         ws.send(json.dumps(subscribe_msg))
-        self._last_ping = time.time()
 
     def _on_message(self, ws, message: str) -> None:
-        """Process incoming price tick from MEXC deals stream."""
+        """Process incoming aggregated trade from Binance."""
         try:
-            # MEXC sends ping as text "ping" — respond with "pong"
-            if message == "ping":
-                ws.send("pong")
-                self._last_ping = time.time()
-                return
-
             data = json.loads(message)
 
-            # Handle subscription confirmations and other system messages
-            if data.get('id') is not None or data.get('code') is not None:
-                if data.get('code') == 0:
-                    logger.debug(f"[WS] Subscription confirmed")
+            # Skip subscription confirmation
+            if 'result' in data or 'id' in data:
                 return
 
-            # Extract channel info
-            channel = data.get('c', '')  # e.g. "spot@public.deals.v3.api@BTCUSDT"
-            d = data.get('d', {})
-
-            if not channel or not d:
+            # Binance aggTrade format:
+            # {"e":"aggTrade","s":"BTCUSDT","p":"66602.43","q":"0.00067","T":1774768622063,...}
+            event_type = data.get('e', '')
+            if event_type != 'aggTrade':
                 return
 
-            # Parse symbol from channel name
-            # Channel format: spot@public.deals.v3.api@BTCUSDT
-            parts = channel.split('@')
-            if len(parts) < 3:
-                return
-            symbol = parts[-1]  # e.g. "BTCUSDT"
+            symbol = data.get('s', '').lower()  # "BTCUSDT" -> "btcusdt"
+            price  = float(data.get('p', 0) or 0)
+            volume = float(data.get('q', 0) or 0)
 
-            # Deals data: d.deals is a list of trades
-            # Each deal: {"p": price, "v": volume, "S": side (1=buy,2=sell), "t": timestamp}
-            deals = d.get('deals', [])
-            if not deals:
-                return
-
-            # Use the most recent deal
-            latest = deals[-1]
-            price = float(latest.get('p', 0) or 0)
-            volume = float(latest.get('v', 0) or 0)
-
-            if price <= 0:
+            if price <= 0 or not symbol:
                 return
 
             tick = PriceTick(
@@ -211,13 +186,9 @@ class WebSocketMonitor:
         """
         Detect momentum spike — the core signal.
 
-        Conditions for momentum BUY signal:
+        Conditions for momentum signal:
         1. Price moved > momentum_threshold in last 30 seconds
-        2. Move is in one direction (not oscillating)
-        3. Volume is above average (surge confirmation)
-
-        Conditions for momentum SELL signal:
-        Same but downward.
+        2. Volume is above average (surge confirmation)
         """
         ticks = list(history)
 
@@ -236,18 +207,22 @@ class WebSocketMonitor:
         # Price change in last 30 seconds
         price_change = (current_price - price_30s_ago) / price_30s_ago
 
-        # Volume average
-        avg_volume = sum(t.volume for t in ticks) / len(ticks)
-        current_volume = current.volume
-        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+        # Volume: sum volume over last 30s vs average
+        vol_30s = sum(t.volume for t in ticks_30s)
+        older_ticks = [t for t in ticks if now - t.timestamp > 30]
+        if len(older_ticks) >= 5:
+            avg_vol_30s = sum(t.volume for t in older_ticks) / len(older_ticks) * len(ticks_30s)
+            volume_ratio = vol_30s / avg_vol_30s if avg_vol_30s > 0 else 1.0
+        else:
+            volume_ratio = 1.0
 
         # Check thresholds
         abs_change = abs(price_change)
         if abs_change >= self.momentum_threshold and volume_ratio >= self.volume_multiplier:
             direction = "BUY" if price_change > 0 else "SELL"
 
-            # Map back to slash format
-            original_symbol = self.symbol_map.get(symbol, symbol.replace('USDT', '/USDT'))
+            # Map back to original symbol format (e.g. btcusdt -> BTC/USDT)
+            original_symbol = self.symbol_map.get(symbol, symbol.upper().replace('USDT', '/USDT'))
 
             logger.warning(
                 f"[WS MOMENTUM] {original_symbol} | {direction} | "
@@ -281,7 +256,7 @@ class WebSocketMonitor:
 
     def get_latest_price(self, symbol: str) -> Optional[float]:
         """Get most recent price for a symbol."""
-        symbol_key = symbol.replace('/', '')
+        symbol_key = symbol.replace('/', '').lower()
         history = self.price_history.get(symbol_key)
         if history and len(history) > 0:
             return list(history)[-1].price
@@ -302,12 +277,10 @@ class WebSocketMonitor:
 
     def update_symbols(self, new_symbols: list) -> None:
         """Update monitored symbols list (called after scan)."""
-        new_keys = [s.replace('/', '') for s in new_symbols]
-        # Add any new symbols to history tracking
+        new_keys = [s.replace('/', '').lower() for s in new_symbols]
         for key in new_keys:
             if key not in self.price_history:
                 self.price_history[key] = deque(maxlen=self.HISTORY_SIZE)
-        # Update symbol map
         for s in new_symbols:
-            self.symbol_map[s.replace('/', '')] = s
+            self.symbol_map[s.replace('/', '').lower()] = s
         self.symbols = new_keys
