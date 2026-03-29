@@ -1,8 +1,6 @@
-# Environment & Config
+# Environment & Secrets
 .env
 LIVE_OK.txt
-config.yaml
-!config.yaml.example
 
 # Runtime & Data
 swingbot.db

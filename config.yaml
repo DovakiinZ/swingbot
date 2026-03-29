@@ -1,0 +1,125 @@
+# ==============================================================================
+# SWINGBOT CONFIGURATION
+# ==============================================================================
+
+# -- Exchange Architecture -----------------------------------------------------
+# trading_exchange   : where orders are placed (your account — MEXC)
+# market_data_exchange: where we READ prices/candles/funding rates (Bybit — public API)
+# Bybit and Binance are used READ-ONLY as market indicators, no API keys needed
+trading_exchange: mexc
+market_data_exchange: bybit          # public API only — no auth needed
+bybit_account_type: spot
+trading_mode: paper
+
+# -- Scan Speed ----------------------------------------------------------------
+scan_interval_minutes: 10
+
+# -- Strategy & Scanning -------------------------------------------------------
+timeframe: "1h"
+lookback: 100
+scan_top_n: 20
+scanner:
+  enabled: true
+  breakout_lookback: 20
+  btc_correlation_factor: 0.7
+
+# -- Multi-Timeframe Confluence (MTF) -----------------------------------------
+# Research: Adding 4H filter raises Profit Factor from ~1.4 to ~2.0+
+# Only take 1H longs when 4H trend is up; only take 1H shorts when 4H is down
+mtf_filter_enabled: true
+htf_timeframe: "4h"
+htf_ema_period: 200
+
+# -- Funding Rate Filter (Bybit public API) ------------------------------------
+# Positive funding = longs overcrowded → avoid new longs
+# Negative funding = shorts overcrowded → avoid new shorts
+funding_rate_filter: true
+funding_long_block: 0.0008    # Block longs if funding > 0.08%/8h
+funding_short_block: -0.0005  # Block shorts if funding < -0.05%/8h
+
+# -- Signal Quality Gates ------------------------------------------------------
+allow_short: true
+min_score: 55
+min_rr_ratio: 2.5             # Research minimum for breakout profitability at ~45% win rate
+
+# -- Risk Management -----------------------------------------------------------
+risk_per_trade_percent: 1.0
+max_open_positions: 3
+max_portfolio_risk_percent: 5.0
+max_single_position_percent: 30.0
+daily_loss_limit_percent: 5.0
+consecutive_loss_limit: 5
+api_failure_limit: 5
+
+# -- Compounding Plan ($100 -> $1000) ------------------------------------------
+base_balance: 1000.0
+peak_balance_tracking: true
+drawdown_reset_threshold: 0.20
+
+# -- Breakout Detection --------------------------------------------------------
+breakout_lookback: 20
+breakout_volume_mult: 2.0
+breakout_compression_atr: 2.0
+
+# -- Database ------------------------------------------------------------------
+db_path: "swingbot.db"
+
+# -- Paper Trading -------------------------------------------------------------
+paper_start_balance_usdt: 1000.0
+
+# -- Sentiment Gate ------------------------------------------------------------
+sentiment_threshold: 10
+
+# -- Volume Filter -------------------------------------------------------------
+min_volume_usdt: 10000000
+
+# -- Polymarket (Macro Filter) -------------------------------------------------
+polymarket:
+  enabled: false
+  update_hours: 6
+  markets: []
+  default_risk_scale_on_failure: 1.0
+
+# -- Multi-Armed Bandit --------------------------------------------------------
+bandit:
+  exploration_prob: 0.2
+
+# -- Trading Hours (UTC) -------------------------------------------------------
+trading_hours:
+  enabled: false               # Disabled: trade any hour in paper mode
+
+# -- Account Info --------------------------------------------------------------
+account_name: "Swingbot Paper"
+live: false
+show_balances_on_startup: true
+
+# -- Localization --------------------------------------------------------------
+lang: "en"
+
+# -- WebSocket Real-Time Monitor -----------------------------------------------
+websocket:
+  enabled: true
+  symbols:                    # Symbols to monitor at startup
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - BNB/USDT
+    - XRP/USDT
+    - DOGE/USDT
+    - ADA/USDT
+    - AVAX/USDT
+    - DOT/USDT
+    - MATIC/USDT
+
+# -- Momentum Breakout Strategy ------------------------------------------------
+momentum_min_change: 0.003    # 0.3% price move to trigger (lower = more trades)
+momentum_min_volume: 2.0      # 2x average volume required
+momentum_sl_mult: 1.5         # Stop loss = 1.5x ATR
+momentum_tp_mult: 2.5         # Take profit = 2.5x ATR
+momentum_cooldown_sec: 300    # 5 min between signals per symbol
+
+# -- Dashboard -----------------------------------------------------------------
+dashboard:
+  enabled: true
+  port: 8080
+  host: '0.0.0.0'
