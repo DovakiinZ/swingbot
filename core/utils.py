@@ -20,7 +20,9 @@ def setup_logging(log_dir: str = "logs", console: bool = True, console_level: st
     root_logger.handlers = []
 
     # File Handler (UTF-8 for Arabic support)
-    file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+    # Use plain FileHandler instead of RotatingFileHandler to avoid
+    # Windows PermissionError when WebSocket thread holds the log file open
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     file_handler.setLevel(getattr(logging, file_level.upper(), logging.INFO))
     root_logger.addHandler(file_handler)
