@@ -121,47 +121,75 @@ class WebSocketMonitor:
             on_error=self._on_error,
             on_close=self._on_close,
         )
-        self.ws.run_forever(ping_interval=30, ping_timeout=10)
+        # MEXC handles ping/pong at application level (text "ping"/"pong"),
+        # not at WebSocket protocol level — disable library-level pings
+        self.ws.run_forever(ping_interval=0)
 
     def _on_open(self, ws) -> None:
-        """Subscribe to mini-ticker for all monitored symbols."""
+        """Subscribe to deals (real-time trades) for all monitored symbols."""
         logger.warning(f"[WS] Connected — subscribing to {len(self.symbols)} symbols")
         self._connected = True
-        for symbol in self.symbols:
-            subscribe_msg = {
-                "method": "SUBSCRIPTION",
-                "params": [f"spot@public.miniTicker.v3.api@{symbol}@UTC+0"]
-            }
-            ws.send(json.dumps(subscribe_msg))
+
+        # Batch all subscriptions into one message (MEXC requirement)
+        params = [f"spot@public.deals.v3.api@{symbol}" for symbol in self.symbols]
+        subscribe_msg = {
+            "method": "SUBSCRIPTION",
+            "params": params
+        }
+        ws.send(json.dumps(subscribe_msg))
         self._last_ping = time.time()
 
     def _on_message(self, ws, message: str) -> None:
-        """Process incoming price tick."""
+        """Process incoming price tick from MEXC deals stream."""
         try:
-            data = json.loads(message)
-
-            # Handle ping/pong
-            if data.get('id') == 0:
+            # MEXC sends ping as text "ping" — respond with "pong"
+            if message == "ping":
+                ws.send("pong")
+                self._last_ping = time.time()
                 return
 
-            # Extract tick data
-            d = data.get('d', {})
-            symbol = data.get('s', '')
+            data = json.loads(message)
 
-            if not symbol or not d:
+            # Handle subscription confirmations and other system messages
+            if data.get('id') is not None or data.get('code') is not None:
+                if data.get('code') == 0:
+                    logger.debug(f"[WS] Subscription confirmed")
+                return
+
+            # Extract channel info
+            channel = data.get('c', '')  # e.g. "spot@public.deals.v3.api@BTCUSDT"
+            d = data.get('d', {})
+
+            if not channel or not d:
+                return
+
+            # Parse symbol from channel name
+            # Channel format: spot@public.deals.v3.api@BTCUSDT
+            parts = channel.split('@')
+            if len(parts) < 3:
+                return
+            symbol = parts[-1]  # e.g. "BTCUSDT"
+
+            # Deals data: d.deals is a list of trades
+            # Each deal: {"p": price, "v": volume, "S": side (1=buy,2=sell), "t": timestamp}
+            deals = d.get('deals', [])
+            if not deals:
+                return
+
+            # Use the most recent deal
+            latest = deals[-1]
+            price = float(latest.get('p', 0) or 0)
+            volume = float(latest.get('v', 0) or 0)
+
+            if price <= 0:
                 return
 
             tick = PriceTick(
                 symbol=symbol,
-                price=float(d.get('c', 0) or 0),    # close/last price
-                volume=float(d.get('v', 0) or 0),    # volume
+                price=price,
+                volume=volume,
                 timestamp=time.time(),
-                bid=float(d.get('b', 0) or 0),
-                ask=float(d.get('a', 0) or 0),
             )
-
-            if tick.price <= 0:
-                return
 
             # Store in history
             history = self.price_history.get(symbol)
