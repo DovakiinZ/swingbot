@@ -371,7 +371,7 @@ def main():
     # -- Start WebSocket monitor -------------------------------------------
     ws_monitor = None
     ws_config = CONFIG.get('websocket', {})
-    if WS_AVAILABLE and ws_config.get('enabled', False):
+    if WS_AVAILABLE and ws_config.get('enabled', True):
         initial_symbols = ws_config.get(
             'symbols',
             ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
