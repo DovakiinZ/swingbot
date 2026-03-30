@@ -28,19 +28,20 @@ class SQLiteStore:
         conn.close()
 
     def _migrate_tb_columns(self, conn):
-        """Add triple-barrier columns to trade_features if they don't exist."""
+        """Add triple-barrier and newer columns to trade_features if they don't exist."""
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(trade_features)")
         existing = {row[1] for row in cursor.fetchall()}
-        tb_cols = {
+        new_cols = {
             'tb_label': 'INTEGER',
             'tb_hours_to_barrier': 'REAL',
             'tb_barrier_hit': 'TEXT',
             'tb_upper_barrier': 'REAL',
             'tb_lower_barrier': 'REAL',
             'tb_return_pct': 'REAL',
+            'btc_correlation': 'REAL',  # Altcoin-BTC correlation feature
         }
-        for col, col_type in tb_cols.items():
+        for col, col_type in new_cols.items():
             if col not in existing:
                 try:
                     cursor.execute(f"ALTER TABLE trade_features ADD COLUMN {col} {col_type}")

@@ -102,6 +102,45 @@ class RiskEngine:
         risk_pct = base_risk * multiplier
         return min(risk_pct, 5.0)  # Hard cap at 5%
 
+    def get_kelly_risk_percent(
+        self,
+        win_probability: float,
+        avg_win_loss_ratio: float = 2.0,
+        fraction: float = 0.25
+    ) -> float:
+        """
+        Kelly Criterion position sizing — mathematically optimal bet size.
+        (Borrowed from mfzhang/crypto-trading-bot)
+
+        Full Kelly: f = p - (1-p)/b
+          where p = win probability, b = avg_win / avg_loss ratio
+
+        We use fractional Kelly (default 25%) to reduce variance while
+        keeping most of the edge. Full Kelly is too aggressive for trading.
+
+        Args:
+            win_probability: Model's predicted P(win), 0.0-1.0
+            avg_win_loss_ratio: Historical avg win / avg loss (default 2.0 = 2R)
+            fraction: Kelly fraction (0.25 = quarter Kelly, conservative)
+
+        Returns:
+            Risk percentage (0.0-5.0), capped at 5% hard limit.
+        """
+        if win_probability <= 0 or avg_win_loss_ratio <= 0:
+            return 0.0
+
+        # Kelly formula
+        kelly_f = win_probability - (1 - win_probability) / avg_win_loss_ratio
+
+        if kelly_f <= 0:
+            return 0.0  # Negative edge — don't bet
+
+        # Fractional Kelly to reduce variance
+        risk_pct = kelly_f * fraction * 100.0
+
+        # Floor at 1% so we still take the trade, cap at 5%
+        return max(1.0, min(risk_pct, 5.0))
+
     def calculate_position_size(self, signal: Signal, reserved_capital: float = 0.0,
                                  dynamic_risk_pct: float = None) -> float:
         """
@@ -154,3 +193,74 @@ class RiskEngine:
             return False, f"Size {size} < Min {min_amount}"
 
         return True, "OK"
+
+    @staticmethod
+    def risk_to_qty(
+        capital: float,
+        risk_pct: float,
+        entry_price: float,
+        stop_price: float,
+        market_structure: dict = None
+    ) -> float:
+        """
+        Convert a risk percentage into an exchange-valid order quantity.
+        Handles lot size precision, step size rounding, and min notional.
+        (Borrowed from jesse-ai/jesse's risk_to_qty utility)
+
+        Args:
+            capital: Available USDT balance
+            risk_pct: Risk as percentage (e.g. 3.0 for 3%)
+            entry_price: Expected entry price
+            stop_price: Stop-loss price
+            market_structure: ccxt market info dict (from exchange.market(symbol))
+
+        Returns:
+            Exchange-valid quantity, or 0.0 if order would be below minimums.
+        """
+        import math
+
+        sl_distance = abs(entry_price - stop_price)
+        if sl_distance == 0 or entry_price == 0:
+            return 0.0
+
+        risk_amount = capital * (risk_pct / 100.0)
+        qty = risk_amount / sl_distance
+
+        # Cap to available capital
+        max_qty = capital / entry_price
+        qty = min(qty, max_qty)
+
+        if not market_structure:
+            return qty
+
+        # Apply exchange precision constraints
+        limits = market_structure.get('limits', {})
+        precision = market_structure.get('precision', {})
+
+        # Step size / amount precision
+        amount_precision = precision.get('amount')
+        if amount_precision is not None:
+            if isinstance(amount_precision, int):
+                # Decimal places (e.g. 3 means 0.001 step)
+                factor = 10 ** amount_precision
+                qty = math.floor(qty * factor) / factor
+            elif isinstance(amount_precision, float) and amount_precision > 0:
+                # Step size (e.g. 0.01)
+                qty = math.floor(qty / amount_precision) * amount_precision
+
+        # Min amount check
+        min_amount = limits.get('amount', {}).get('min')
+        if min_amount and qty < min_amount:
+            return 0.0
+
+        # Min cost (notional) check
+        min_cost = limits.get('cost', {}).get('min')
+        if min_cost and (qty * entry_price) < min_cost:
+            return 0.0
+
+        # Max amount check
+        max_amount = limits.get('amount', {}).get('max')
+        if max_amount and qty > max_amount:
+            qty = max_amount
+
+        return qty

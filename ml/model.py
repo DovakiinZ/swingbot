@@ -26,12 +26,17 @@ FEATURE_COLUMNS = [
     'ema_fast_slope', 'ema_slow_slope', 'adx',
     'atr_percent', 'bb_position', 'bb_width',
     'volume_ratio', 'scanner_score', 'breakout_detected',
-    'macro_scale', 'fear_greed', 'hour_of_day', 'day_of_week'
+    'macro_scale', 'fear_greed', 'hour_of_day', 'day_of_week',
+    'btc_correlation'  # Altcoin-BTC correlation (from CryptoSentimentBertRfStrat)
 ]
 
 MODEL_PATH = Path('data/swingbot_model.pkl')
 MIN_TRAINING_SAMPLES = 50
 CONFIDENCE_THRESHOLD = 0.70   # Only trade when 70%+ confident
+
+
+FALLBACK_WINDOW = 20          # Track last N predictions for degradation check
+FALLBACK_MIN_ACCURACY = 0.50  # Fall back to scanner-only if accuracy < 50%
 
 
 class SwingbotModel:
@@ -40,6 +45,8 @@ class SwingbotModel:
     def __init__(self):
         self.model = None
         self.is_trained = False
+        self._recent_predictions: list = []  # (predicted_win, actual_outcome) pairs
+        self._fallback_active = False
         self._load_if_exists()
 
     def _load_if_exists(self) -> None:
@@ -57,6 +64,10 @@ class SwingbotModel:
         """
         Train Random Forest on historical trade data.
 
+        Uses walk-forward cross-validation instead of standard k-fold
+        to prevent future data leakage in time-series data.
+        (Borrowed from stefan-jansen/machine-learning-for-trading)
+
         Uses 'tb_label' column if available (preferred -- Triple-Barrier).
         Falls back to 'outcome' column for backward compatibility.
 
@@ -64,23 +75,18 @@ class SwingbotModel:
           +1 -> positive (strong win -- hit TP on time)
            0 -> negative (skip -- capital tied up)
           -1 -> negative (skip -- loss)
-
-        This means the model learns to only recommend trades
-        that hit TP before time runs out -- the highest quality setups.
         """
         try:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.calibration import CalibratedClassifierCV
-            from sklearn.model_selection import cross_val_score
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.metrics import roc_auc_score
 
             if len(df) < MIN_TRAINING_SAMPLES:
                 return {'error': f'Need {MIN_TRAINING_SAMPLES} samples, have {len(df)}'}
 
             # Use triple-barrier labels if available
             if 'tb_label' in df.columns and df['tb_label'].notna().sum() >= 30:
-                # Convert triple labels to binary:
-                # +1 = 1 (strong win -- hit TP on time)
-                # 0 and -1 = 0 (avoid -- either loss or time wasted)
                 y = (df['tb_label'] == 1).astype(int)
                 label_source = "triple_barrier"
                 logger.warning("[ML] Training with Triple-Barrier labels")
@@ -90,7 +96,8 @@ class SwingbotModel:
                 logger.warning("[ML] Training with binary labels (no TB data yet)")
 
             # Prepare features
-            X = df[FEATURE_COLUMNS].fillna(0)
+            feature_cols = list(FEATURE_COLUMNS)
+            X = df[feature_cols].fillna(0)
 
             # Add time-based features that TB makes relevant
             if 'tb_hours_to_barrier' in df.columns:
@@ -98,9 +105,37 @@ class SwingbotModel:
                 X['hours_to_barrier'] = df['tb_hours_to_barrier'].fillna(48)
                 X['hit_tp_fast'] = ((df['tb_barrier_hit'] == 'upper') &
                                     (df['tb_hours_to_barrier'] < 12)).astype(int)
+                feature_cols = list(X.columns)
 
-            # Random Forest -- 200 trees, sqrt features per tree
-            n_features_sqrt = int(np.sqrt(len(FEATURE_COLUMNS)))
+            # Walk-forward CV: train on past, test on future — no leakage
+            # (standard k-fold shuffles time order and leaks future data)
+            n_splits = min(5, len(df) // 20)  # At least 20 samples per fold
+            n_splits = max(2, n_splits)
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            wf_scores = []
+            for train_idx, test_idx in tscv.split(X):
+                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+                # Skip fold if only one class in train or test
+                if len(y_train.unique()) < 2 or len(y_test.unique()) < 2:
+                    continue
+
+                fold_rf = RandomForestClassifier(
+                    n_estimators=200,
+                    max_features=int(np.sqrt(len(feature_cols))),
+                    min_samples_leaf=3,
+                    random_state=42,
+                    n_jobs=-1,
+                    class_weight='balanced'
+                )
+                fold_rf.fit(X_train, y_train)
+                fold_prob = fold_rf.predict_proba(X_test)[:, 1]
+                wf_scores.append(roc_auc_score(y_test, fold_prob))
+
+            # Train final model on ALL data with calibration
+            n_features_sqrt = int(np.sqrt(len(feature_cols)))
             rf = RandomForestClassifier(
                 n_estimators=200,
                 max_features=n_features_sqrt,
@@ -110,17 +145,15 @@ class SwingbotModel:
                 class_weight='balanced'
             )
 
-            # Calibrate for reliable probabilities (Platt scaling)
-            self.model = CalibratedClassifierCV(rf, cv=5, method='sigmoid')
+            # Use TimeSeriesSplit for calibration CV too
+            cal_cv = TimeSeriesSplit(n_splits=max(2, n_splits))
+            self.model = CalibratedClassifierCV(rf, cv=cal_cv, method='sigmoid')
             self.model.fit(X, y)
-
-            # Cross-validation score
-            cv_scores = cross_val_score(self.model, X, y, cv=5, scoring='roc_auc')
 
             # Feature importance (from underlying RF after fitting)
             try:
                 base_rf = self.model.calibrated_classifiers_[0].estimator
-                feat_importance = dict(zip(FEATURE_COLUMNS, base_rf.feature_importances_))
+                feat_importance = dict(zip(feature_cols, base_rf.feature_importances_))
                 top_features = sorted(feat_importance.items(), key=lambda x: x[1], reverse=True)[:5]
             except Exception:
                 top_features = []
@@ -131,16 +164,21 @@ class SwingbotModel:
                 pickle.dump(self.model, f)
 
             self.is_trained = True
+            self._recent_predictions = []  # Reset tracker on retrain
+
+            wf_auc_mean = float(np.mean(wf_scores)) if wf_scores else 0.0
+            wf_auc_std = float(np.std(wf_scores)) if wf_scores else 0.0
 
             metrics = {
                 'samples': len(df),
                 'win_rate': float(y.mean()),
-                'cv_auc_mean': float(cv_scores.mean()),
-                'cv_auc_std': float(cv_scores.std()),
+                'wf_auc_mean': wf_auc_mean,
+                'wf_auc_std': wf_auc_std,
+                'wf_folds': len(wf_scores),
                 'top_features': top_features,
                 'label_source': label_source
             }
-            logger.warning(f"[ML] Model trained: {metrics}")
+            logger.warning(f"[ML] Model trained (walk-forward CV): {metrics}")
             return metrics
 
         except ImportError:
@@ -167,17 +205,53 @@ class SwingbotModel:
             logger.error(f"[ML] Prediction failed: {e}")
             return 0.0, False
 
+    def record_outcome(self, predicted_win: bool, actual_outcome: int) -> None:
+        """
+        Record a prediction outcome for degradation tracking.
+        Called when a trade closes — compares what the model predicted
+        vs what actually happened.
+        (Inspired by freqtrade FreqAI's rolling performance monitor)
+        """
+        self._recent_predictions.append((predicted_win, actual_outcome == 1))
+        if len(self._recent_predictions) > FALLBACK_WINDOW:
+            self._recent_predictions = self._recent_predictions[-FALLBACK_WINDOW:]
+
+        # Check if model has degraded
+        if len(self._recent_predictions) >= FALLBACK_WINDOW // 2:
+            correct = sum(1 for pred, actual in self._recent_predictions if pred == actual)
+            accuracy = correct / len(self._recent_predictions)
+
+            if accuracy < FALLBACK_MIN_ACCURACY and not self._fallback_active:
+                self._fallback_active = True
+                logger.warning(
+                    f"[ML_FALLBACK] Model accuracy {accuracy:.0%} < {FALLBACK_MIN_ACCURACY:.0%} "
+                    f"over last {len(self._recent_predictions)} trades — falling back to scanner-only. "
+                    f"Retrain with: python -m ml.trainer"
+                )
+            elif accuracy >= FALLBACK_MIN_ACCURACY and self._fallback_active:
+                self._fallback_active = False
+                logger.warning(f"[ML_RECOVER] Model accuracy recovered to {accuracy:.0%} — re-enabling ML gate")
+
+    def get_rolling_accuracy(self) -> Optional[float]:
+        """Returns rolling accuracy over recent predictions, or None if insufficient data."""
+        if len(self._recent_predictions) < 5:
+            return None
+        correct = sum(1 for pred, actual in self._recent_predictions if pred == actual)
+        return correct / len(self._recent_predictions)
+
     def should_enter(self, features: dict, scanner_score: float,
                      min_score: float = 55) -> Tuple[bool, float, str]:
         """
         Full entry gate combining scanner score + model confidence.
         Only enter when BOTH the scanner AND the model agree.
+        Auto-falls back to scanner-only if model accuracy degrades.
         Returns (enter, confidence, reason).
         """
-        if not self.is_trained:
-            # Fall back to scanner-only if model not yet trained
+        if not self.is_trained or self._fallback_active:
+            reason = "scanner_only (model not trained yet)" if not self.is_trained \
+                else "scanner_only (model accuracy degraded — retrain needed)"
             enter = scanner_score >= min_score
-            return enter, 0.0, "scanner_only (model not trained yet)"
+            return enter, 0.0, reason
 
         confidence, model_ok = self.predict(features)
 
@@ -193,3 +267,8 @@ class SwingbotModel:
     def confidence_threshold(self) -> float:
         """Return the confidence threshold for trading."""
         return CONFIDENCE_THRESHOLD
+
+    @property
+    def fallback_active(self) -> bool:
+        """Whether the model has been auto-disabled due to poor accuracy."""
+        return self._fallback_active

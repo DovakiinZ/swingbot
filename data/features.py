@@ -70,7 +70,8 @@ class FeatureEngine:
                              scanner_score: float = 0,
                              breakout_detected: bool = False,
                              macro_scale: float = 1.0,
-                             fear_greed: float = 50.0) -> dict:
+                             fear_greed: float = 50.0,
+                             btc_correlation: float = 0.0) -> dict:
         """
         Extract the full feature vector for ML inference.
         Returns a flat dict matching the trade_features schema.
@@ -128,4 +129,39 @@ class FeatureEngine:
             'fear_greed':      fear_greed,
             'hour_of_day':     now.hour,
             'day_of_week':     now.weekday(),
+            'btc_correlation': btc_correlation,
         }
+
+    @staticmethod
+    def compute_btc_correlation(symbol_df: pd.DataFrame, btc_df: pd.DataFrame,
+                                 window: int = 20) -> float:
+        """
+        Compute rolling correlation between an altcoin and BTC returns.
+        (Borrowed from rmr327/CryptoSentimentBertRfStrat)
+
+        Altcoins highly correlated with BTC follow BTC trends.
+        Low correlation means the altcoin is moving independently —
+        signals on decoupled coins are more reliable.
+
+        Returns correlation coefficient (-1.0 to 1.0), or 0.0 on error.
+        """
+        try:
+            if len(symbol_df) < window + 1 or len(btc_df) < window + 1:
+                return 0.0
+
+            sym_returns = symbol_df['close'].pct_change().dropna().tail(window)
+            btc_returns = btc_df['close'].pct_change().dropna().tail(window)
+
+            if len(sym_returns) < window or len(btc_returns) < window:
+                return 0.0
+
+            corr = sym_returns.values[-window:]
+            btc_corr = btc_returns.values[-window:]
+
+            import numpy as np
+            if np.std(corr) == 0 or np.std(btc_corr) == 0:
+                return 0.0
+
+            return float(np.corrcoef(corr, btc_corr)[0, 1])
+        except Exception:
+            return 0.0

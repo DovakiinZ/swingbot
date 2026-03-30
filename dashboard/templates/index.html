@@ -1775,7 +1775,51 @@ async function refresh() {
 
 refresh();
 fetchLivePrices();
-setInterval(refresh, 30000);
+
+// SSE: real-time push updates (replaces heavy polling for status)
+// Falls back to 30s polling if SSE is unavailable
+let sseConnected = false;
+if (typeof EventSource !== 'undefined') {
+  const es = new EventSource('/api/stream');
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.error) return;
+      sseConnected = true;
+      // Update real-time fields from SSE push
+      if (d.balance !== undefined) {
+        document.getElementById('sBalance').textContent = '$' + Number(d.balance).toFixed(2);
+      }
+      if (d.next_scan_seconds !== undefined) {
+        nextScanSec = d.next_scan_seconds;
+      }
+      if (d.circuit_breaker !== undefined) {
+        const cbEl = document.getElementById('sCircuit');
+        if (cbEl) cbEl.textContent = d.circuit_breaker;
+      }
+      if (d.day_pnl !== undefined) {
+        const pnlEl = document.getElementById('sDayPnl');
+        if (pnlEl) {
+          const pnl = Number(d.day_pnl);
+          pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+          pnlEl.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        }
+      }
+      // ML status indicators
+      if (d.ml_fallback_active) {
+        const aiEl = document.getElementById('sAiConf');
+        if (aiEl) aiEl.textContent = 'FALLBACK';
+      }
+    } catch (err) { /* ignore parse errors */ }
+  };
+  es.onerror = () => { sseConnected = false; };
+}
+
+// Full refresh less frequently when SSE is active, more when it's not
+setInterval(() => {
+  if (!sseConnected) refresh();
+}, 30000);
+setInterval(refresh, 120000);  // Full data refresh every 2 min regardless
 setInterval(fetchLivePrices, 5000);
 </script>
 </body>

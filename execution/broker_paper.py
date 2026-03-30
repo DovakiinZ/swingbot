@@ -162,6 +162,132 @@ class PaperBroker(Broker):
                 pos.stop_loss = new_sl
                 self.store.save_position(pos)
 
+    # --- Trailing Entry (from passivbot) -----------------------------------------
+
+    def create_trailing_entry(self, signal: Signal, size: float,
+                               trail_pct: float = 0.003) -> str:
+        """
+        Instead of entering immediately at market, wait for a pullback.
+        (Borrowed from enarjord/passivbot trailing entry technique)
+
+        For BUY: set entry trigger at signal.price * (1 - trail_pct).
+                 If price pulls back to trigger, then bounces up, fill the order.
+        For SELL: set entry trigger at signal.price * (1 + trail_pct).
+                  If price bounces up to trigger, then drops, fill the order.
+
+        Returns a pending entry ID. Call check_trailing_entries() each candle.
+        """
+        entry_id = str(uuid.uuid4())
+        if signal.side == Side.BUY:
+            trigger_price = signal.price * (1 - trail_pct)
+        else:
+            trigger_price = signal.price * (1 + trail_pct)
+
+        if not hasattr(self, '_trailing_entries'):
+            self._trailing_entries = {}
+
+        self._trailing_entries[entry_id] = {
+            'signal': signal,
+            'size': size,
+            'trigger_price': trigger_price,
+            'best_price': signal.price,  # Track best pullback price seen
+            'activated': False,          # True once trigger hit
+            'created_at': self.clock.now_ms(),
+            'expires_at': self.clock.now_ms() + (3600 * 1000),  # 1 hour expiry
+        }
+        return entry_id
+
+    def check_trailing_entries(self, candle: Candle) -> Optional[Order]:
+        """
+        Check pending trailing entries against current candle.
+
+        Logic:
+        1. Price must first reach the trigger (pullback zone)
+        2. Then price must reverse back toward original direction
+        3. Fill when price moves 0.1% past the best pullback price
+
+        This avoids buying at the exact top of a breakout candle.
+        Expires after 1 hour if trigger never hit.
+        """
+        if not hasattr(self, '_trailing_entries') or not self._trailing_entries:
+            return None
+
+        now = self.clock.now_ms()
+        expired = []
+        filled_order = None
+
+        for entry_id, entry in self._trailing_entries.items():
+            # Check expiry
+            if now > entry['expires_at']:
+                expired.append(entry_id)
+                continue
+
+            signal = entry['signal']
+
+            if signal.side == Side.BUY:
+                # Phase 1: Wait for pullback to trigger
+                if not entry['activated']:
+                    if candle.low <= entry['trigger_price']:
+                        entry['activated'] = True
+                        entry['best_price'] = candle.low
+                    continue
+
+                # Phase 2: Track lowest price during pullback
+                if candle.low < entry['best_price']:
+                    entry['best_price'] = candle.low
+
+                # Phase 3: Fill when price bounces 0.1% above best pullback
+                fill_threshold = entry['best_price'] * 1.001
+                if candle.high >= fill_threshold:
+                    fill_signal = Signal(
+                        symbol=signal.symbol,
+                        side=signal.side,
+                        reason=signal.reason,
+                        price=fill_threshold,
+                        stop_loss=signal.stop_loss,
+                        take_profit=signal.take_profit,
+                        params=signal.params
+                    )
+                    filled_order = self.place_order(fill_signal, entry['size'])
+                    expired.append(entry_id)
+                    break
+
+            elif signal.side == Side.SELL:
+                if not entry['activated']:
+                    if candle.high >= entry['trigger_price']:
+                        entry['activated'] = True
+                        entry['best_price'] = candle.high
+                    continue
+
+                if candle.high > entry['best_price']:
+                    entry['best_price'] = candle.high
+
+                fill_threshold = entry['best_price'] * 0.999
+                if candle.low <= fill_threshold:
+                    fill_signal = Signal(
+                        symbol=signal.symbol,
+                        side=signal.side,
+                        reason=signal.reason,
+                        price=fill_threshold,
+                        stop_loss=signal.stop_loss,
+                        take_profit=signal.take_profit,
+                        params=signal.params
+                    )
+                    filled_order = self.place_order(fill_signal, entry['size'])
+                    expired.append(entry_id)
+                    break
+
+        for eid in expired:
+            self._trailing_entries.pop(eid, None)
+
+        return filled_order
+
+    def get_pending_trailing_entries(self) -> int:
+        """Return count of pending trailing entries."""
+        if not hasattr(self, '_trailing_entries'):
+            return 0
+        return len(self._trailing_entries)
+
     # --- SL/TP simulation ------------------------------------------------------
 
     def check_sl_tp(self, candle: Candle, symbol: str = None) -> Optional[Signal]:

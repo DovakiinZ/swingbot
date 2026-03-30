@@ -1201,4 +1201,77 @@ def create_app(store=None, state=None, config: dict = None):
                 "error": True
             })
 
+    # ── Server-Sent Events (SSE) — real-time push updates ───────────────
+    # (Borrowed from freqtrade's web UI approach — SSE instead of polling)
+    # Clients connect once, server pushes updates every 5 seconds.
+    # Much more efficient than client polling every 30 seconds.
+
+    @app.route('/api/stream')
+    @login_required
+    def api_stream():
+        """
+        SSE endpoint — pushes status updates to the dashboard in real-time.
+        The client opens one long-lived connection and receives updates as they happen.
+
+        Usage in JS:
+            const es = new EventSource('/api/stream');
+            es.onmessage = (e) => { const data = JSON.parse(e.data); ... };
+        """
+        import time as _time
+
+        def generate():
+            while True:
+                try:
+                    if state is None:
+                        data = json.dumps({"error": "State not initialized"})
+                    else:
+                        snapshot = state.snapshot() if hasattr(state, 'snapshot') else state
+
+                        # Minimal status payload for real-time updates
+                        next_scan = 0
+                        last_cycle = snapshot.get('last_cycle')
+                        interval = (config or {}).get('scan_interval_minutes', 10) * 60
+                        if last_cycle:
+                            try:
+                                last_dt = datetime.fromisoformat(last_cycle)
+                                elapsed = (datetime.now(timezone.utc) - last_dt.replace(
+                                    tzinfo=timezone.utc if last_dt.tzinfo is None else last_dt.tzinfo
+                                )).total_seconds()
+                                next_scan = max(0, int(interval - elapsed))
+                            except Exception:
+                                next_scan = 0
+
+                        data = json.dumps({
+                            'balance': snapshot.get('total_balance', 0),
+                            'mode': snapshot.get('mode', 'paper'),
+                            'day_pnl': snapshot.get('day_pnl', 0),
+                            'circuit_breaker': snapshot.get('circuit_breaker', 'OK'),
+                            'open_positions_count': snapshot.get('open_positions_count', 0),
+                            'next_scan_seconds': next_scan,
+                            'ai_confidence': snapshot.get('ai_confidence'),
+                            'ml_fallback_active': snapshot.get('ml_fallback_active', False),
+                            'ml_rolling_accuracy': snapshot.get('ml_rolling_accuracy'),
+                            'last_updated': datetime.now(timezone.utc).isoformat(),
+                        })
+
+                    yield f"data: {data}\n\n"
+                    _time.sleep(5)  # Push every 5 seconds
+                except GeneratorExit:
+                    return
+                except Exception as e:
+                    logger.error(f"[SSE] Stream error: {e}")
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    _time.sleep(10)
+
+        from flask import Response
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',  # Disable nginx buffering
+                'Connection': 'keep-alive',
+            }
+        )
+
     return app
