@@ -73,15 +73,17 @@ class RsiEmaStrategy:
             current_side = Side.BUY  # backward compat assumes long
 
         if not has_position:
-            # FIX 2: Trend confirmation — last 3 closed candles must agree
-            # Prevents entering on false signals that flip within seconds
+            # FIX 2: Trend confirmation — at least 2 of last 3 closed candles must agree
+            # Prevents entering on false signals, but allows normal mixed-candle trends
             last3 = df.iloc[-4:-1]  # 3 candles before current (closed candles)
-            bullish_confirmed = all(
-                last3.iloc[i]['close'] > last3.iloc[i]['open'] for i in range(len(last3))
+            bullish_count = sum(
+                1 for i in range(len(last3)) if last3.iloc[i]['close'] > last3.iloc[i]['open']
             )
-            bearish_confirmed = all(
-                last3.iloc[i]['close'] < last3.iloc[i]['open'] for i in range(len(last3))
+            bearish_count = sum(
+                1 for i in range(len(last3)) if last3.iloc[i]['close'] < last3.iloc[i]['open']
             )
+            bullish_confirmed = bullish_count >= 2
+            bearish_confirmed = bearish_count >= 2
 
             # ── Long Entry (bullish trend + oversold) ────────────────────────
             trend_ok = ema_fast > ema_slow
