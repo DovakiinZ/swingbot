@@ -39,15 +39,18 @@ funding_short_block: -0.0005  # Block shorts if funding < -0.05%/8h
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 55
-min_rr_ratio: 2.5             # Research minimum for breakout profitability at ~45% win rate
+min_score: 65                  # Raised from 55 — breakout detection adds 25pts to good setups
+min_rr_ratio: 2.5             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
+volume_multiplier: 1.5         # FIX 5: Current volume must be >= 1.5x 20-period average
 
 # -- Risk Management -----------------------------------------------------------
-risk_per_trade_percent: 1.0
+risk_per_trade_percent: 2.0    # FIX 6: Risk 2% of balance per trade (was 1%)
+max_risk_per_trade_pct: 2.0    # FIX 6: Hard cap on risk per trade
 max_open_positions: 3
 max_portfolio_risk_percent: 5.0
 max_single_position_percent: 30.0
 daily_loss_limit_percent: 5.0
+max_daily_loss_usd: 15.0       # FIX 7: Hard dollar daily loss limit — stop all trading
 consecutive_loss_limit: 5
 api_failure_limit: 5
 
@@ -111,12 +114,31 @@ websocket:
     - DOT/USDT
     - MATIC/USDT
 
+# -- ATR-Based Stop Loss / Take Profit (FIX 3) ---------------------------------
+atr_multiplier_sl: 2.0        # SL = entry ± (ATR × this). Minimum enforced, prevents tight stops
+atr_multiplier_tp: 4.0        # TP = entry ± (ATR × this). Gives 2:1 R:R minimum
+
+# -- Trailing Stop (FIX 8) ----------------------------------------------------
+trailing_stop_activate_pct: 0.01  # Activate trailing stop after +1% profit
+trailing_stop_trail_pct: 0.008    # Trail 0.8% behind current price
+
 # -- Momentum Breakout Strategy ------------------------------------------------
 momentum_min_change: 0.003    # 0.3% price move to trigger (lower = more trades)
 momentum_min_volume: 2.0      # 2x average volume required
-momentum_sl_mult: 1.5         # Stop loss = 1.5x ATR
-momentum_tp_mult: 2.5         # Take profit = 2.5x ATR
+momentum_sl_mult: 2.0         # Stop loss = 2.0x ATR (was 1.5 — too tight)
+momentum_tp_mult: 4.0         # Take profit = 4.0x ATR (was 2.5 — now 2:1 R:R)
 momentum_cooldown_sec: 300    # 5 min between signals per symbol
+
+# -- Trailing Entry (passivbot technique) --------------------------------------
+trailing_entry:
+  enabled: false               # false = enter immediately, true = wait for pullback
+  pullback_pct: 0.003          # Wait for 0.3% pullback before entering
+  expiry_seconds: 3600         # Cancel if no pullback within 1 hour
+
+# -- Kelly Criterion Sizing ----------------------------------------------------
+kelly_sizing:
+  enabled: false               # false = use phase-based risk, true = use Kelly formula
+  fraction: 0.25               # Quarter-Kelly (conservative). Full Kelly = 1.0 (risky)
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:

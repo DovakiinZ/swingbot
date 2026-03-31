@@ -294,7 +294,11 @@ def main():
             raise ValueError(f"Unknown trading exchange: {trading_exchange}")
     else:
         init_bal = CONFIG.get('paper_start_balance_usdt', 1000.0)
-        broker = PaperBroker(store, clock, initial_balance=init_bal)
+        broker = PaperBroker(
+            store, clock, initial_balance=init_bal,
+            trail_activate_pct=CONFIG.get('trailing_stop_activate_pct', 0.01),
+            trail_pct=CONFIG.get('trailing_stop_trail_pct', 0.008)
+        )
 
     # Scanner config
     scanner_conf = CONFIG.get('scanner', {})
@@ -604,11 +608,26 @@ def main():
                 return
 
             if day_pnl < -(current_bal * CONFIG['daily_loss_limit_percent'] / 100):
-                logger.critical("Daily loss limit hit -- halting for the day.")
+                logger.critical("Daily loss limit hit (%) -- halting for the day.")
                 store.update_daily_stats(today_str, {'paused_until': 'Next Day'})
                 circuit_breaker_ok = False
                 try:
                     notifier.notify_circuit_breaker(f"Daily loss: ${day_pnl:.2f}")
+                except Exception:
+                    pass
+                return
+
+            # FIX 7: Hard dollar daily loss limit
+            max_daily_loss_usd = CONFIG.get('max_daily_loss_usd', 15.0)
+            if day_pnl < -max_daily_loss_usd:
+                logger.critical(
+                    f"[HARD STOP] Daily loss ${abs(day_pnl):.2f} exceeds "
+                    f"${max_daily_loss_usd:.2f} limit -- halting for the day."
+                )
+                store.update_daily_stats(today_str, {'paused_until': 'Next Day'})
+                circuit_breaker_ok = False
+                try:
+                    notifier.notify_circuit_breaker(f"Hard daily loss limit: ${day_pnl:.2f} / -${max_daily_loss_usd:.2f}")
                 except Exception:
                     pass
                 return
@@ -663,6 +682,7 @@ def main():
             # These fire immediately — don't wait for the 10-min cycle
             # ==================================================================
             momentum_signals_processed = 0
+            _momentum_opened_this_cycle = set()  # Prevent duplicate opens within same batch
 
             while not momentum_queue.empty() and momentum_signals_processed < 5:
                 try:
@@ -671,9 +691,14 @@ def main():
 
                     sym = event['symbol']
 
-                    # Skip if already have position
+                    # FIX 1: Strict duplicate position guard
+                    # Check both DB positions AND symbols opened earlier in this cycle
                     current_open = broker.get_open_positions()
                     if any(p.symbol == sym for p in current_open):
+                        logger.warning(f"[MOMENTUM SKIP] {sym}: already have open position (duplicate blocked)")
+                        continue
+                    if sym in _momentum_opened_this_cycle:
+                        logger.warning(f"[MOMENTUM SKIP] {sym}: already opened this cycle (duplicate blocked)")
                         continue
 
                     # Skip if slots full
@@ -716,6 +741,23 @@ def main():
                     )
 
                     if not sig:
+                        continue
+
+                    # FIX 4: R:R gate for momentum signals too
+                    if sig.stop_loss and sig.price and sig.take_profit:
+                        sl_dist = abs(sig.price - sig.stop_loss)
+                        tp_dist = abs(sig.price - sig.take_profit)
+                        rr = tp_dist / sl_dist if sl_dist > 0 else 0
+                        min_rr = CONFIG.get('min_rr_ratio', 2.0)
+                        if rr < min_rr:
+                            logger.warning(f"[MOMENTUM SKIP] {sym}: SKIPPED — RR ratio {rr:.2f} below minimum {min_rr}")
+                            continue
+
+                    # FIX 5: Volume confirmation for momentum signals
+                    vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
+                    vol_mult = CONFIG.get('volume_multiplier', 1.5)
+                    if vol_ratio < vol_mult:
+                        logger.warning(f"[MOMENTUM SKIP] {sym}: SKIPPED — volume too low ({vol_ratio:.1f}x < {vol_mult}x)")
                         continue
 
                     # Size the position
@@ -767,6 +809,7 @@ def main():
                     )
                     order = broker.place_order(sig, base_size)
                     if order:
+                        _momentum_opened_this_cycle.add(sym)  # FIX 1: Mark as opened
                         # Save ML features for training
                         try:
                             ml_features = FeatureEngine.extract_ml_features(
@@ -1098,6 +1141,13 @@ def main():
                     except Exception:
                         pass   # Funding rate optional — don't block on error
 
+                # FIX 5: Volume confirmation — current volume must exceed threshold
+                curr_vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
+                vol_multiplier = CONFIG.get('volume_multiplier', 1.5)
+                if curr_vol_ratio < vol_multiplier:
+                    logger.warning(f"[SKIP] {sym}: SKIPPED — volume too low ({curr_vol_ratio:.1f}x < {vol_multiplier}x required)")
+                    continue
+
                 # Entry checklist gate
                 passed, reason = _passes_entry_checklist(
                     macro_scale=status.get('risk_scale', 1.0),
@@ -1151,10 +1201,23 @@ def main():
                     peak_balance=peak_balance
                 )
 
-                # Risk sizing with dynamic risk
-                base_size = risk_engine.calculate_position_size(
-                    sig, reserved_capital=reserved, dynamic_risk_pct=dynamic_risk
+                # FIX 6: Risk-based position sizing — max loss = max_risk_per_trade_pct of balance
+                # Use risk_to_qty for exchange-precision quantities
+                max_risk_pct = CONFIG.get('max_risk_per_trade_pct', dynamic_risk)
+                actual_risk_pct = min(dynamic_risk, max_risk_pct)
+                market_struct = market.get_market_structure(sym)
+                base_size = RiskEngine.risk_to_qty(
+                    capital=current_bal - reserved,
+                    risk_pct=actual_risk_pct,
+                    entry_price=sig.price,
+                    stop_price=sig.stop_loss,
+                    market_structure=market_struct
                 )
+                if base_size <= 0:
+                    # Fallback to old method if risk_to_qty returns 0
+                    base_size = risk_engine.calculate_position_size(
+                        sig, reserved_capital=reserved, dynamic_risk_pct=actual_risk_pct
+                    )
                 risk_scale = 1.0 if SNIPER_MODE else status.get('risk_scale', 1.0)
                 size = base_size * risk_scale * btc_factor * (risk_mult if conservative else 1.0)
 

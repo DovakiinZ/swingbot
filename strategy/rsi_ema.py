@@ -28,6 +28,10 @@ class RsiEmaStrategy:
             except Exception as e:
                 logger.warning(f"[Strategy] TB init failed, using standard: {e}")
 
+    # FIX 3: Minimum ATR multipliers — prevents stops too tight for market noise
+    MIN_SL_MULT = 2.0   # SL at least 2.0x ATR away (was 1.5 in some arms)
+    MIN_TP_MULT = 4.0   # TP at least 4.0x ATR away → ensures 2:1 R:R minimum
+
     def check_signal(self,
                      df: pd.DataFrame,
                      regime: MarketRegime,
@@ -41,7 +45,7 @@ class RsiEmaStrategy:
         current_position: None/False for no position, True for backward compat
                           (assumes long), or a Position object.
         """
-        if df.empty:
+        if df.empty or len(df) < 5:
             return None
 
         curr = df.iloc[-1]
@@ -69,12 +73,30 @@ class RsiEmaStrategy:
             current_side = Side.BUY  # backward compat assumes long
 
         if not has_position:
+            # FIX 2: Trend confirmation — last 3 closed candles must agree
+            # Prevents entering on false signals that flip within seconds
+            last3 = df.iloc[-4:-1]  # 3 candles before current (closed candles)
+            bullish_confirmed = all(
+                last3.iloc[i]['close'] > last3.iloc[i]['open'] for i in range(len(last3))
+            )
+            bearish_confirmed = all(
+                last3.iloc[i]['close'] < last3.iloc[i]['open'] for i in range(len(last3))
+            )
+
             # ── Long Entry (bullish trend + oversold) ────────────────────────
             trend_ok = ema_fast > ema_slow
             rsi_ok = rsi < params.rsi_entry
             vol_ok = atr_pct < 5.0
 
             if trend_ok and rsi_ok and vol_ok:
+                if not bullish_confirmed:
+                    logger.info(f"[SKIP] {symbol}: SKIPPED — trend not confirmed (need 3 bullish candles for BUY)")
+                    return None
+
+                # FIX 3: Enforce minimum ATR multipliers
+                sl_mult = max(params.sl_mult, self.MIN_SL_MULT)
+                tp_mult = max(params.tp_mult, self.MIN_TP_MULT)
+
                 # Use Triple-Barrier dynamic barriers if available
                 if self._tb_labeler:
                     barriers = self._tb_labeler.get_dynamic_barriers(
@@ -83,8 +105,8 @@ class RsiEmaStrategy:
                     stop_loss = barriers['stop_loss']
                     take_profit = barriers['take_profit']
                 else:
-                    stop_loss = close - (atr * params.sl_mult)
-                    take_profit = close + (atr * params.tp_mult)
+                    stop_loss = close - (atr * sl_mult)
+                    take_profit = close + (atr * tp_mult)
 
                 return Signal(
                     symbol=symbol,
@@ -103,6 +125,14 @@ class RsiEmaStrategy:
                 short_vol_ok   = atr_pct < 5.0                # Not chaotic
 
                 if short_trend_ok and short_rsi_ok and short_vol_ok:
+                    if not bearish_confirmed:
+                        logger.info(f"[SKIP] {symbol}: SKIPPED — trend not confirmed (need 3 bearish candles for SELL)")
+                        return None
+
+                    # FIX 3: Enforce minimum ATR multipliers
+                    sl_mult = max(params.sl_mult, self.MIN_SL_MULT)
+                    tp_mult = max(params.tp_mult, self.MIN_TP_MULT)
+
                     # Use Triple-Barrier dynamic barriers if available
                     if self._tb_labeler:
                         barriers = self._tb_labeler.get_dynamic_barriers(
@@ -111,8 +141,8 @@ class RsiEmaStrategy:
                         short_sl = barriers['stop_loss']
                         short_tp = barriers['take_profit']
                     else:
-                        short_sl = close + (atr * params.sl_mult)
-                        short_tp = close - (atr * params.tp_mult)
+                        short_sl = close + (atr * sl_mult)
+                        short_tp = close - (atr * tp_mult)
 
                     return Signal(
                         symbol=symbol,

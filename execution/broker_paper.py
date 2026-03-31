@@ -12,12 +12,16 @@ class PaperBroker(Broker):
                  clock: Clock,
                  initial_balance: float = 50.0,
                  slippage: float = 0.001,
-                 fee: float = 0.001):
+                 fee: float = 0.001,
+                 trail_activate_pct: float = 0.01,
+                 trail_pct: float = 0.008):
         self.store = store
         self.clock = clock
         self.balance = initial_balance
         self.slippage = slippage
         self.fee = fee
+        self._trail_activate_pct = trail_activate_pct  # FIX 8: configurable
+        self._trail_pct = trail_pct                    # FIX 8: configurable
         self._positions: Dict[str, Position] = {}  # keyed by symbol
         self._orders: Dict[str, Order] = {}
 
@@ -158,6 +162,39 @@ class PaperBroker(Broker):
             if candle_low > pos.entry_price - r:
                 return   # Not yet 1R in profit
             new_sl = candle_low + trail_atr
+            if new_sl < pos.stop_loss:
+                pos.stop_loss = new_sl
+                self.store.save_position(pos)
+
+    def update_trailing_stop_pct(self, symbol: str, current_price: float,
+                                  activate_pct: float = 0.01,
+                                  trail_pct: float = 0.008) -> None:
+        """
+        FIX 8: Percentage-based trailing stop.
+        Activates after position reaches +activate_pct profit (default +1%).
+        Trails at trail_pct distance (default 0.8%).
+
+        For BUY:  trail_sl = current_price × (1 - trail_pct), only moves UP
+        For SELL: trail_sl = current_price × (1 + trail_pct), only moves DOWN
+        """
+        pos = self._positions.get(symbol)
+        if not pos or not pos.stop_loss:
+            return
+
+        if pos.side == Side.BUY:
+            profit_pct = (current_price - pos.entry_price) / pos.entry_price
+            if profit_pct < activate_pct:
+                return  # Not yet +1% in profit
+            new_sl = current_price * (1 - trail_pct)
+            if new_sl > pos.stop_loss:
+                pos.stop_loss = new_sl
+                self.store.save_position(pos)
+
+        elif pos.side == Side.SELL:
+            profit_pct = (pos.entry_price - current_price) / pos.entry_price
+            if profit_pct < activate_pct:
+                return  # Not yet +1% in profit
+            new_sl = current_price * (1 + trail_pct)
             if new_sl < pos.stop_loss:
                 pos.stop_loss = new_sl
                 self.store.save_position(pos)
@@ -305,11 +342,16 @@ class PaperBroker(Broker):
         if not pos:
             return None
 
-        # Ratchet trailing stop before checking hits
+        # Ratchet trailing stop before checking hits (ATR-based)
         atr_val = getattr(candle, 'atr', 0)
         trail_atr = atr_val * 1.5 if atr_val else 0
         if trail_atr > 0:
             self.update_trailing_stop(pos.symbol, candle.high, candle.low, trail_atr)
+
+        # FIX 8: Also apply percentage-based trailing stop (tighter, activates at +1%)
+        activate_pct = getattr(self, '_trail_activate_pct', 0.01)
+        trail_pct = getattr(self, '_trail_pct', 0.008)
+        self.update_trailing_stop_pct(pos.symbol, candle.close, activate_pct, trail_pct)
 
         if pos.side == Side.BUY:
             # Long: SL hit when low <= stop_loss, TP hit when high >= take_profit

@@ -1,0 +1,204 @@
+# ==============================================================================
+# SWINGBOT SETUP EXAMPLE
+# ==============================================================================
+# This file shows how to configure BOTH .env and config.yaml
+# Copy the relevant sections into each file.
+#
+#   cp SETUP.example .env         (then edit the .env section)
+#   cp SETUP.example config.yaml  (then delete the .env section)
+#
+# Or just read this as a reference and fill in .env + config.yaml manually.
+# ==============================================================================
+
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║  .env  — secrets & API keys (NEVER commit this file)                     ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+# -- Mode ----------------------------------------------------------------------
+TRADING_MODE=paper
+
+# -- MEXC (Primary trading account) -------------------------------------------
+# mexc.com -> API Management -> Create API Key
+# Permissions: Read + Trade ONLY. NEVER enable Withdrawal.
+MEXC_API_KEY=
+MEXC_API_SECRET=
+
+# -- Bybit (Optional — only if trading on Bybit instead of MEXC) --------------
+BYBIT_API_KEY=
+BYBIT_API_SECRET=
+
+# -- Binance (Optional) -------------------------------------------------------
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
+
+# -- Dashboard -----------------------------------------------------------------
+DASHBOARD_PASSWORD=changeme123
+FLASK_SECRET_KEY=replace-with-long-random-string
+
+# -- Discord Webhooks (optional) -----------------------------------------------
+DISCORD_WEBHOOK_GENERAL=
+DISCORD_WEBHOOK_TRADES=
+DISCORD_WEBHOOK_CLOSED=
+DISCORD_WEBHOOK_REPORTS=
+DISCORD_WEBHOOK_WARNINGS=
+
+# -- Telegram (optional) -------------------------------------------------------
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# -- Custom Webhook (optional) -------------------------------------------------
+CUSTOM_WEBHOOK_URL=
+CUSTOM_WEBHOOK_FORMAT=discord
+
+# -- AI / LLM -----------------------------------------------------------------
+ANTHROPIC_API_KEY=
+GROQ_API_KEY=
+
+# -- Logging -------------------------------------------------------------------
+LOG_LEVEL_CONSOLE=WARNING
+LOG_LEVEL_FILE=DEBUG
+
+
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║  config.yaml  — bot behavior (safe to commit)                           ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+# -- Exchange Architecture -----------------------------------------------------
+# trading_exchange   : where orders are placed (your account)
+# market_data_exchange: where we READ market data (public API, no auth needed)
+trading_exchange: mexc
+market_data_exchange: bybit
+bybit_account_type: spot
+trading_mode: paper
+
+# -- Scan Speed ----------------------------------------------------------------
+scan_interval_minutes: 10
+
+# -- Strategy & Scanning -------------------------------------------------------
+timeframe: "1h"
+lookback: 100
+scan_top_n: 20
+scanner:
+  enabled: true
+  breakout_lookback: 20
+  btc_correlation_factor: 0.7
+
+# -- Multi-Timeframe Confluence (MTF) -----------------------------------------
+mtf_filter_enabled: true
+htf_timeframe: "4h"
+htf_ema_period: 200
+
+# -- Funding Rate Filter (Bybit public API) ------------------------------------
+funding_rate_filter: true
+funding_long_block: 0.0008
+funding_short_block: -0.0005
+
+# -- Signal Quality Gates ------------------------------------------------------
+allow_short: true
+min_score: 65
+min_rr_ratio: 2.5
+volume_multiplier: 1.5
+
+# -- Risk Management -----------------------------------------------------------
+risk_per_trade_percent: 2.0
+max_risk_per_trade_pct: 2.0
+max_open_positions: 3
+max_portfolio_risk_percent: 5.0
+max_single_position_percent: 30.0
+daily_loss_limit_percent: 5.0
+max_daily_loss_usd: 15.0
+consecutive_loss_limit: 5
+api_failure_limit: 5
+
+# -- Compounding ---------------------------------------------------------------
+base_balance: 1000.0
+peak_balance_tracking: true
+drawdown_reset_threshold: 0.20
+
+# -- Breakout Detection --------------------------------------------------------
+breakout_lookback: 20
+breakout_volume_mult: 2.0
+breakout_compression_atr: 2.0
+
+# -- ATR-Based Stop Loss / Take Profit -----------------------------------------
+atr_multiplier_sl: 2.0
+atr_multiplier_tp: 4.0
+
+# -- Trailing Stop -------------------------------------------------------------
+trailing_stop_activate_pct: 0.01
+trailing_stop_trail_pct: 0.008
+
+# -- Database ------------------------------------------------------------------
+db_path: "swingbot.db"
+
+# -- Paper Trading -------------------------------------------------------------
+paper_start_balance_usdt: 1000.0
+
+# -- Sentiment Gate ------------------------------------------------------------
+sentiment_threshold: 10
+
+# -- Volume Filter -------------------------------------------------------------
+min_volume_usdt: 10000000
+
+# -- Polymarket (Macro Filter) -------------------------------------------------
+polymarket:
+  enabled: false
+  update_hours: 6
+  markets: []
+  default_risk_scale_on_failure: 1.0
+
+# -- Multi-Armed Bandit --------------------------------------------------------
+bandit:
+  exploration_prob: 0.2
+
+# -- Trading Hours (UTC) -------------------------------------------------------
+trading_hours:
+  enabled: false
+
+# -- Account Info --------------------------------------------------------------
+account_name: "Swingbot Paper"
+live: false
+show_balances_on_startup: true
+
+# -- Localization --------------------------------------------------------------
+lang: "en"
+
+# -- WebSocket Real-Time Monitor -----------------------------------------------
+websocket:
+  enabled: true
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+    - BNB/USDT
+    - XRP/USDT
+    - DOGE/USDT
+    - ADA/USDT
+    - AVAX/USDT
+    - DOT/USDT
+    - MATIC/USDT
+
+# -- Momentum Breakout Strategy ------------------------------------------------
+momentum_min_change: 0.003
+momentum_min_volume: 2.0
+momentum_sl_mult: 2.0
+momentum_tp_mult: 4.0
+momentum_cooldown_sec: 300
+
+# -- Trailing Entry (passivbot technique) --------------------------------------
+trailing_entry:
+  enabled: false
+  pullback_pct: 0.003
+  expiry_seconds: 3600
+
+# -- Kelly Criterion Sizing ----------------------------------------------------
+kelly_sizing:
+  enabled: false
+  fraction: 0.25
+
+# -- Dashboard -----------------------------------------------------------------
+dashboard:
+  enabled: true
+  port: 8080
+  host: '0.0.0.0'
