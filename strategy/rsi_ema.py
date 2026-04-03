@@ -29,8 +29,8 @@ class RsiEmaStrategy:
                 logger.warning(f"[Strategy] TB init failed, using standard: {e}")
 
     # FIX 3: Minimum ATR multipliers — prevents stops too tight for market noise
-    MIN_SL_MULT = 2.0   # SL at least 2.0x ATR away (was 1.5 in some arms)
-    MIN_TP_MULT = 4.0   # TP at least 4.0x ATR away → ensures 2:1 R:R minimum
+    MIN_SL_MULT = 1.5   # SL at least 1.5x ATR away (dynamic ATR-based stop)
+    MIN_TP_MULT = 3.0   # TP at least 3.0x ATR away → ensures 2:1 R:R minimum
 
     def check_signal(self,
                      df: pd.DataFrame,
@@ -58,8 +58,9 @@ class RsiEmaStrategy:
         atr = curr['atr']
         atr_pct = (atr / close) * 100
 
-        # Never trade in extreme volatility
-        if regime == MarketRegime.HIGH_VOLATILITY:
+        # Only trade in trending regimes — skip RANGING (no edge in chop)
+        if regime == MarketRegime.RANGING:
+            logger.info(f"[SKIP] {symbol}: RANGING regime (ADX < 20) — no entries")
             return None
 
         # Determine current position state

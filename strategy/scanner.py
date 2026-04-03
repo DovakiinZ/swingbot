@@ -12,7 +12,7 @@ Scoring breakdown
   Total possible      : 100 pts
 
 Hard gates (return 0 regardless of score):
-  - HIGH_VOLATILITY regime (ATR% > 5%)
+  - RANGING regime (ADX < 20, no directional edge)
   - ADX < ADX_MIN_ENTRY (choppy market, no real trend)
   - False breakout: breakout candle has large wick vs body (smart money sweep)
 
@@ -108,14 +108,14 @@ class MarketScanner:
         Higher = stronger conviction to enter.
 
         Hard gates return (0, False) immediately:
-          - HIGH_VOLATILITY regime
+          - RANGING regime
           - ADX below minimum (choppy, no real trend)
         """
         if df is None or df.empty or len(df) < 2:
             return 0.0, False
 
-        # Hard gate 1: Never trade into extreme volatility
-        if regime == MarketRegime.HIGH_VOLATILITY:
+        # Hard gate 1: Never trade in RANGING regime (no directional edge)
+        if regime == MarketRegime.RANGING:
             return 0.0, False
 
         curr = df.iloc[-1]

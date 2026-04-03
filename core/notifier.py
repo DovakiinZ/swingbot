@@ -118,8 +118,9 @@ class Notifier:
     # ── Trade Notifications ─────────────────────────────────────────────
 
     def notify_entry(self, symbol: str, signal, size: float,
-                     score: float, arm: int) -> None:
-        """Notify about a new trade entry."""
+                     score: float, arm: int, atr: float = 0.0,
+                     regime: str = "") -> None:
+        """Notify about a new trade entry. Includes ATR and regime info."""
         side_str = signal.side.value if hasattr(signal, 'side') else str(signal)
         direction = "▲ LONG" if side_str == "BUY" else "▼ SHORT"
         price = signal.price if hasattr(signal, 'price') else 0
@@ -133,24 +134,32 @@ class Notifier:
 
         score_emoji = "\U0001f525" if score >= 80 else ""  # fire emoji
 
+        fields = [
+            {"name": "\u0627\u0644\u0639\u0645\u0644\u0629", "value": symbol, "inline": True},
+            {"name": "\u0627\u0644\u0627\u062a\u062c\u0627\u0647", "value": direction, "inline": True},
+            {"name": "\u0627\u0644\u0633\u0639\u0631", "value": f"${price:,.4f}", "inline": True},
+            {"name": "\u0627\u0644\u0647\u062f\u0641 \U0001f3af", "value": f"${tp:,.4f}" if tp else "N/A", "inline": True},
+            {"name": "\u0627\u0644\u0648\u0642\u0641 \U0001f6d1", "value": f"${sl:,.4f}" if sl else "N/A", "inline": True},
+            {"name": "R:R", "value": rr, "inline": True},
+            {"name": "\u0627\u0644\u062f\u0631\u062c\u0629", "value": f"{score:.0f}/100 {score_emoji}", "inline": True},
+        ]
+        if atr > 0:
+            fields.append({"name": "ATR", "value": f"${atr:,.6f}", "inline": True})
+        if regime:
+            fields.append({"name": "Regime", "value": regime, "inline": True})
+
         discord_payload = {
             "embeds": [{
                 "title": "\u26a1 \u0635\u0641\u0642\u0629 \u062c\u062f\u064a\u062f\u0629",
                 "color": 59808,  # 0x00e5a0 green
-                "fields": [
-                    {"name": "\u0627\u0644\u0639\u0645\u0644\u0629", "value": symbol, "inline": True},
-                    {"name": "\u0627\u0644\u0627\u062a\u062c\u0627\u0647", "value": direction, "inline": True},
-                    {"name": "\u0627\u0644\u0633\u0639\u0631", "value": f"${price:,.4f}", "inline": True},
-                    {"name": "\u0627\u0644\u0647\u062f\u0641 \U0001f3af", "value": f"${tp:,.4f}" if tp else "N/A", "inline": True},
-                    {"name": "\u0627\u0644\u0648\u0642\u0641 \U0001f6d1", "value": f"${sl:,.4f}" if sl else "N/A", "inline": True},
-                    {"name": "R:R", "value": rr, "inline": True},
-                    {"name": "\u0627\u0644\u062f\u0631\u062c\u0629", "value": f"{score:.0f}/100 {score_emoji}", "inline": True},
-                ],
+                "fields": fields,
                 "footer": {"text": "Swingbot"},
                 "timestamp": self._iso_now(),
             }]
         }
 
+        atr_line = f"\nATR: ${atr:,.6f}" if atr > 0 else ""
+        regime_line = f"\nRegime: {regime}" if regime else ""
         tg_text = (
             f"<b>\u26a1 \u0635\u0641\u0642\u0629 \u062c\u062f\u064a\u062f\u0629</b>\n"
             f"{symbol} | {direction}\n"
@@ -158,6 +167,7 @@ class Notifier:
             f"\U0001f3af \u0627\u0644\u0647\u062f\u0641: ${tp:,.4f}\n"
             f"\U0001f6d1 \u0627\u0644\u0648\u0642\u0641: ${sl:,.4f}\n"
             f"R:R: {rr} | \u0627\u0644\u062f\u0631\u062c\u0629: {score:.0f}/100"
+            f"{atr_line}{regime_line}"
         )
 
         self._broadcast(discord_payload, tg_text, channel="trades")

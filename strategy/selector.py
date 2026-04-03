@@ -136,8 +136,8 @@ class SymbolSelector:
 
                     regime = RegimeDetector.detect(curr)
 
-                    # Skip high volatility
-                    if regime == MarketRegime.HIGH_VOLATILITY:
+                    # Skip ranging markets (no directional edge)
+                    if regime == MarketRegime.RANGING:
                         continue
 
                     # Trend direction
@@ -166,12 +166,11 @@ class SymbolSelector:
                     else:
                         vol_score = max(0, 1.0 - (atr_pct - 3.0) / 2.0)
 
-                    # Regime (10%): TRENDING = 1.0, RANGING = 0.5, UNCERTAIN = 0.3
+                    # Regime (10%): TRENDING_UP = 1.0, TRENDING_DOWN = 0.7, RANGING = 0.3
                     regime_scores = {
-                        MarketRegime.TRENDING: 1.0,
-                        MarketRegime.RANGING: 0.5,
-                        MarketRegime.UNCERTAIN: 0.3,
-                        MarketRegime.HIGH_VOLATILITY: 0.0,
+                        MarketRegime.TRENDING_UP: 1.0,
+                        MarketRegime.TRENDING_DOWN: 0.7,
+                        MarketRegime.RANGING: 0.3,
                     }
                     regime_score = regime_scores.get(regime, 0.3)
 

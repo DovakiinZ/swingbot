@@ -42,6 +42,7 @@ allow_short: true
 min_score: 50                  # Lowered for paper mode — need trades to collect ML training data
 min_rr_ratio: 1.8             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
 volume_multiplier: 1.2         # FIX 5: Current volume must be >= 1.2x 20-period average
+signal_score_threshold: 40     # Signal scorer threshold (lower for paper mode to collect data)
 
 # -- Risk Management -----------------------------------------------------------
 risk_per_trade_percent: 2.0    # FIX 6: Risk 2% of balance per trade (was 1%)
@@ -58,6 +59,9 @@ api_failure_limit: 5
 base_balance: 1000.0
 peak_balance_tracking: true
 drawdown_reset_threshold: 0.20
+
+# -- Market Regime Detection ---------------------------------------------------
+regime_adx_threshold: 20       # ADX >= this = trending, below = ranging (skip)
 
 # -- Breakout Detection --------------------------------------------------------
 breakout_lookback: 20
@@ -115,8 +119,8 @@ websocket:
     - MATIC/USDT
 
 # -- ATR-Based Stop Loss / Take Profit (FIX 3) ---------------------------------
-atr_multiplier_sl: 2.0        # SL = entry ± (ATR × this). Minimum enforced, prevents tight stops
-atr_multiplier_tp: 4.0        # TP = entry ± (ATR × this). Gives 2:1 R:R minimum
+atr_multiplier_sl: 1.5        # SL = entry ± (ATR × 1.5). Dynamic ATR-based stop loss
+atr_multiplier_tp: 3.0        # TP = entry ± (ATR × 3.0). Gives 2:1 R:R minimum
 
 # -- Trailing Stop (FIX 8) ----------------------------------------------------
 trailing_stop_activate_pct: 0.01  # Activate trailing stop after +1% profit
@@ -139,6 +143,21 @@ trailing_entry:
 kelly_sizing:
   enabled: false               # false = use phase-based risk, true = use Kelly formula
   fraction: 0.25               # Quarter-Kelly (conservative). Full Kelly = 1.0 (risky)
+
+# -- Notifications -------------------------------------------------------------
+notifications:
+  discord:
+    enabled: true
+    channels:
+      general: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+      trades: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+      closed: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+      warnings: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+      reports: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:

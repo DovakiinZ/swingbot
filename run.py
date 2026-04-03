@@ -33,6 +33,7 @@ from storage.sqlite_store import SQLiteStore
 from strategy.rsi_ema import RsiEmaStrategy
 from strategy.regimes import RegimeDetector
 from strategy.scanner import MarketScanner
+from strategy.signal_scorer import SignalScorer
 from risk.risk_engine import RiskEngine
 from risk.circuit_breakers import CircuitBreaker
 from execution.broker_paper import PaperBroker
@@ -51,6 +52,7 @@ from ml.model import SwingbotModel
 from ml.triple_barrier import TripleBarrierLabeler, BarrierConfig
 from core.goal_tracker import GoalTracker
 from core.notifier import Notifier
+from core.health_monitor import HealthMonitor
 from core.trading_hours import is_good_time_to_trade
 from risk.conservative_mode import ConservativeMode
 from reports.weekly_report import WeeklyReport
@@ -321,6 +323,7 @@ def main():
 
     strategy        = RsiEmaStrategy(tb_config=CONFIG.get('triple_barrier'))
     scanner         = MarketScanner()
+    signal_scorer   = SignalScorer(threshold=CONFIG.get('signal_score_threshold', 70))
     bandit          = Bandit(store, exploration_prob=CONFIG['bandit']['exploration_prob'])
     reporter        = DailyReport(store)
     sentiment_engine = SentimentEngine()
@@ -344,6 +347,13 @@ def main():
     conservative_mode = ConservativeMode(store, CONFIG)
     weekly_report     = WeeklyReport(store, CONFIG)
     goal_tracker      = GoalTracker(CONFIG, store)
+
+    # Health monitor — background thread, 60s checks, Discord alerts
+    health_monitor = HealthMonitor(
+        config=CONFIG, broker=broker, store=store,
+        notifier=notifier, circuit_breaker=circuit_breaker, market=market
+    )
+    health_monitor.start()
 
     # -- Momentum Strategy -------------------------------------------------
     momentum_strategy = MomentumBreakoutStrategy(
@@ -826,7 +836,8 @@ def main():
                             pass
 
                         try:
-                            notifier.notify_entry(sym, sig, base_size, mom_score, 0)
+                            notifier.notify_entry(sym, sig, base_size, mom_score, 0,
+                                                  atr=float(df.iloc[-1].get('atr', 0)) if not df.empty else 0)
                         except Exception:
                             pass
                         status['pos_state'] = "OPENING"
@@ -1037,7 +1048,7 @@ def main():
 
                     if score >= MIN_SCORE:
                         scored.append(entry)
-                        logger.debug(f"  {sym}: score={score:.1f} breakout={breakout_detected}")
+                        logger.debug(f"  {sym}: score={score:.1f} breakout={breakout_detected} regime={regime.value}")
 
                 except Exception as e:
                     logger.error(f"Scan error for {sym}: {e}")
@@ -1107,6 +1118,13 @@ def main():
                 sig = strategy.check_signal(df, regime, params,
                                             current_position=None, symbol=sym,
                                             allow_short=allow_short)
+
+                # -- Signal confidence scorer gate ----------------------------
+                if sig is not None:
+                    scorer_result = signal_scorer.score(df, regime, symbol=sym)
+                    if not scorer_result['passed']:
+                        logger.warning(f"[SCORER_SKIP] {sym}: score {scorer_result['total']}/100 < {signal_scorer.threshold}")
+                        continue
 
                 # -- 4H Multi-Timeframe confluence filter ----------------------
                 # Research: HTF filter raises Profit Factor from ~1.4 to ~2.0+
@@ -1253,6 +1271,7 @@ def main():
                     f"[{side_str}] {sym} | score={cand_score:.0f} | "
                     f"price={sig.price:.4f} | size={size:.6f} | "
                     f"SL={sig.stop_loss:.4f} | TP={sig.take_profit:.4f} | "
+                    f"ATR={float(df.iloc[-1].get('atr', 0)):.6f} | regime={regime.value} | "
                     f"risk={dynamic_risk:.1f}% | ML={confidence:.0%}"
                 )
                 order = broker.place_order(sig, size)
@@ -1264,7 +1283,9 @@ def main():
 
                     # Notify entry
                     try:
-                        notifier.notify_entry(sym, sig, size, cand_score, arm_idx)
+                        notifier.notify_entry(sym, sig, size, cand_score, arm_idx,
+                                              atr=float(df.iloc[-1].get('atr', 0)),
+                                              regime=regime.value)
                     except Exception:
                         pass
 

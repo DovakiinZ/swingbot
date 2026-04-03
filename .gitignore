@@ -1,6 +1,5 @@
-# Environment & Secrets
-.env
-LIVE_OK.txt
+# Runtime output
+backtest_results.json
 
 # Runtime & Data
 swingbot.db
