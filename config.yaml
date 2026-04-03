@@ -40,7 +40,7 @@ funding_short_block: -0.0005  # Block shorts if funding < -0.05%/8h
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
 min_score: 65                  # Raised from 55 — breakout detection adds 25pts to good setups
-min_rr_ratio: 2.5             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
+min_rr_ratio: 1.8             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
 volume_multiplier: 1.2         # FIX 5: Current volume must be >= 1.2x 20-period average
 
 # -- Risk Management -----------------------------------------------------------

@@ -755,7 +755,7 @@ def main():
 
                     # FIX 5: Volume confirmation for momentum signals
                     vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
-                    vol_mult = CONFIG.get('volume_multiplier', 1.5)
+                    vol_mult = CONFIG.get('volume_multiplier', 1.2)
                     if vol_ratio < vol_mult:
                         logger.warning(f"[MOMENTUM SKIP] {sym}: SKIPPED — volume too low ({vol_ratio:.1f}x < {vol_mult}x)")
                         continue
@@ -1143,7 +1143,7 @@ def main():
 
                 # FIX 5: Volume confirmation — current volume must exceed threshold
                 curr_vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
-                vol_multiplier = CONFIG.get('volume_multiplier', 1.5)
+                vol_multiplier = CONFIG.get('volume_multiplier', 1.2)
                 if curr_vol_ratio < vol_multiplier:
                     logger.warning(f"[SKIP] {sym}: SKIPPED — volume too low ({curr_vol_ratio:.1f}x < {vol_multiplier}x required)")
                     continue
