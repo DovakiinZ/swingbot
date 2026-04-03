@@ -766,7 +766,7 @@ def main():
                     # FIX 5: Volume confirmation for momentum signals
                     vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
                     vol_mult = CONFIG.get('volume_multiplier', 1.2)
-                    if vol_ratio < vol_mult:
+                    if vol_ratio < vol_mult * 0.95:  # 5% tolerance for floating point
                         logger.warning(f"[MOMENTUM SKIP] {sym}: SKIPPED — volume too low ({vol_ratio:.1f}x < {vol_mult}x)")
                         continue
 
@@ -1022,9 +1022,12 @@ def main():
             all_scanned = []  # All results for dashboard display
             already_held = {p.symbol for p in open_positions}
 
-            for sym in scan_candidates:
+            for scan_idx, sym in enumerate(scan_candidates):
                 if sym in already_held:
                     continue
+                # Rate limit: small delay between API calls to avoid Bybit 429
+                if scan_idx > 0 and scan_idx % 5 == 0:
+                    time.sleep(1.0)
                 try:
                     candles = market.fetch_ohlcv(sym, timeframe, limit=lookback)
                     if not candles:
@@ -1162,7 +1165,7 @@ def main():
                 # FIX 5: Volume confirmation — current volume must exceed threshold
                 curr_vol_ratio = df.iloc[-1].get('volume_ratio', 1.0) if not df.empty else 1.0
                 vol_multiplier = CONFIG.get('volume_multiplier', 1.2)
-                if curr_vol_ratio < vol_multiplier:
+                if curr_vol_ratio < vol_multiplier * 0.95:  # 5% tolerance for floating point
                     logger.warning(f"[SKIP] {sym}: SKIPPED — volume too low ({curr_vol_ratio:.1f}x < {vol_multiplier}x required)")
                     continue
 
