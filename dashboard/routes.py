@@ -1092,7 +1092,7 @@ def create_app(store=None, state=None, config: dict = None):
             log_file = PROJECT_ROOT / 'logs' / f"swingbot_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.log"
             if log_file.exists():
                 lines = log_file.read_text(encoding='utf-8', errors='ignore').splitlines()
-                log_lines = [l.strip() for l in lines[-30:] if l.strip()]
+                log_lines = [l.strip() for l in lines[-30:] if l.strip() and 'WARNING' in l][-10:]
         except Exception:
             pass
 
@@ -1148,13 +1148,13 @@ def create_app(store=None, state=None, config: dict = None):
             f"{chr(10).join(scan_lines) or 'No scan results yet'}\n\n"
             f"OPEN POSITIONS:\n"
             f"{chr(10).join(pos_lines) or 'No open positions'}\n\n"
-            f"RECENT LOG (last 20 lines):\n"
-            f"{chr(10).join(log_lines[-20:]) or 'No logs available'}"
+            f"RECENT LOG (last 10 warnings):\n"
+            f"{chr(10).join(log_lines) or 'No logs available'}"
         )
 
         # Build messages
         messages = []
-        for msg in history[-10:]:
+        for msg in history[-4:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": message})
 
