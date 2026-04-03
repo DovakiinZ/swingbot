@@ -31,7 +31,7 @@ MIN_SCORE = 55
 
 # ADX hard minimum — below this, market is choppy and entries are low-quality
 # Research: ADX < 20 trades have ~40% win rate; ADX >= 20 raises it to ~55%
-ADX_MIN_ENTRY = 15   # Conservative default; raise to 20 for higher quality
+ADX_MIN_ENTRY = 10   # Lowered for paper mode — collect more trade data
 
 
 class MarketScanner:

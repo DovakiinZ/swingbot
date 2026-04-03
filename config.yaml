@@ -39,7 +39,7 @@ funding_short_block: -0.0005  # Block shorts if funding < -0.05%/8h
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 65                  # Raised from 55 — breakout detection adds 25pts to good setups
+min_score: 50                  # Lowered for paper mode — need trades to collect ML training data
 min_rr_ratio: 1.8             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
 volume_multiplier: 1.2         # FIX 5: Current volume must be >= 1.2x 20-period average
 
@@ -71,7 +71,7 @@ db_path: "swingbot.db"
 paper_start_balance_usdt: 1000.0
 
 # -- Sentiment Gate ------------------------------------------------------------
-sentiment_threshold: 10
+sentiment_threshold: 0
 
 # -- Volume Filter -------------------------------------------------------------
 min_volume_usdt: 10000000
