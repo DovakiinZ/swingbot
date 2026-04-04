@@ -1,50 +1,59 @@
 """
-Dynamic Symbol Scanner — fetches all USDT pairs from MEXC, ranks by 24h volume.
+Multi-Exchange Dynamic Symbol Scanner.
 
-Replaces static symbol list with live data from MEXC exchangeInfo + ticker endpoints.
-Refreshes every 4 hours automatically. Falls back to Bybit if MEXC fails.
+Aggregates USDT trading pairs from Binance, Bybit, and MEXC simultaneously.
+Merges 24h volumes across all exchanges for accurate ranking.
+Refreshes every 4 hours. All public APIs — no keys needed.
+
+Symbol universe flow:
+  1. Fetch tickers from Binance, Bybit, MEXC in parallel (all public)
+  2. Merge by base currency, sum volumes across exchanges
+  3. Filter: min volume, active status, no stablecoins/leverage tokens
+  4. Sort by combined 24h volume descending
+  5. Return top N (default 50)
 """
 import logging
 import time
 import threading
-from typing import List, Optional
+from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import ccxt
 
 logger = logging.getLogger(__name__)
 
-# Symbols to always exclude (stablecoins, leverage tokens)
-BANNED_BASES = {'USDC', 'BUSD', 'DAI', 'TUSD', 'UST', 'FDUSD', 'USDP', 'USDD'}
-BANNED_KEYWORDS = ('UP', 'DOWN', 'BEAR', 'BULL', '3L', '3S', '2L', '2S')
+BANNED_BASES = {'USDC', 'BUSD', 'DAI', 'TUSD', 'UST', 'FDUSD', 'USDP', 'USDD', 'PYUSD'}
+BANNED_KEYWORDS = ('UP', 'DOWN', 'BEAR', 'BULL', '3L', '3S', '2L', '2S', '5L', '5S')
 
-REFRESH_INTERVAL = 4 * 3600  # 4 hours in seconds
+REFRESH_INTERVAL = 4 * 3600  # 4 hours
+
+# Exchanges to aggregate (all public, no keys)
+EXCHANGE_IDS = ['binance', 'bybit', 'mexc']
 
 
 class DynamicScanner:
     """
-    Fetches and caches the top USDT trading pairs by 24h volume.
-    Thread-safe. Auto-refreshes every 4 hours.
+    Fetches and caches the top USDT trading pairs by combined 24h volume
+    across Binance, Bybit, and MEXC. Thread-safe. Auto-refreshes every 4h.
     """
 
     def __init__(self, config: dict, fallback_exchange: Optional[ccxt.Exchange] = None):
-        """
-        Args:
-            config: Full config dict with dynamic_symbols, max_symbols, min_24h_volume_usdt
-            fallback_exchange: CCXT exchange to use if MEXC fetch fails (e.g. Bybit)
-        """
         self.config = config
         self.fallback_exchange = fallback_exchange
         self._symbols: List[str] = []
+        self._exchange_map: Dict[str, List[str]] = {}  # symbol → list of exchanges that have it
         self._last_refresh: float = 0
         self._lock = threading.Lock()
 
-        # MEXC exchange instance (public API, no keys needed)
-        try:
-            self._mexc = ccxt.mexc({'enableRateLimit': True})
-            self._mexc.load_markets()
-        except Exception as e:
-            logger.error(f"[SCANNER] MEXC init failed: {e}")
-            self._mexc = None
+        # Initialize exchange connections (public only)
+        self._exchanges: Dict[str, ccxt.Exchange] = {}
+        for eid in EXCHANGE_IDS:
+            try:
+                ex = getattr(ccxt, eid)({'enableRateLimit': True})
+                self._exchanges[eid] = ex
+                logger.info(f"[SCANNER] {eid} connected (public API)")
+            except Exception as e:
+                logger.warning(f"[SCANNER] {eid} init failed: {e}")
 
     @property
     def symbols(self) -> List[str]:
@@ -56,46 +65,51 @@ class DynamicScanner:
             return list(self._symbols)
 
     def refresh(self) -> List[str]:
-        """Fetch fresh symbol list from MEXC, sorted by 24h volume."""
+        """Fetch from all exchanges in parallel, merge, and rank."""
         max_symbols = self.config.get('max_symbols', 50)
         min_volume = self.config.get('min_24h_volume_usdt', 1_000_000)
 
-        symbols = self._fetch_from_mexc(max_symbols, min_volume)
-        if not symbols and self.fallback_exchange:
-            logger.warning("[SCANNER] MEXC failed, falling back to Bybit")
-            symbols = self._fetch_from_fallback(max_symbols, min_volume)
+        # Fetch tickers from all exchanges in parallel
+        all_tickers: Dict[str, Dict] = {}  # exchange_id → {symbol: ticker_data}
 
-        if symbols:
+        def _fetch_one(eid: str):
+            ex = self._exchanges.get(eid)
+            if not ex:
+                return eid, {}
+            try:
+                tickers = ex.fetch_tickers()
+                return eid, tickers
+            except Exception as e:
+                logger.warning(f"[SCANNER] {eid} ticker fetch failed: {e}")
+                return eid, {}
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(_fetch_one, eid): eid for eid in self._exchanges}
+            for future in as_completed(futures, timeout=30):
+                try:
+                    eid, tickers = future.result()
+                    if tickers:
+                        all_tickers[eid] = tickers
+                        logger.info(f"[SCANNER] {eid}: {len(tickers)} tickers loaded")
+                except Exception as e:
+                    logger.warning(f"[SCANNER] Ticker future failed: {e}")
+
+        if not all_tickers:
+            logger.error("[SCANNER] All exchanges failed — using defaults")
             with self._lock:
-                self._symbols = symbols
+                self._symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+                                 'DOGE/USDT', 'ADA/USDT', 'AVAX/USDT', 'DOT/USDT', 'MATIC/USDT']
                 self._last_refresh = time.time()
+            return self._symbols
 
-            examples = ', '.join(s.replace('/USDT', '').replace(':USDT', '') for s in symbols[:5])
-            logger.warning(
-                f"[SCANNER] Loaded {len(symbols)} symbols from exchange "
-                f"(top {max_symbols} by volume)"
-            )
-            logger.warning(f"[SCANNER] Example: {examples}...")
-        else:
-            logger.error("[SCANNER] Could not load any symbols — using defaults")
-            with self._lock:
-                self._symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
-                self._last_refresh = time.time()
+        # Merge: aggregate volume by base currency across all exchanges
+        merged: Dict[str, Dict] = {}  # base → {total_vol, symbol, exchanges}
 
-        return self._symbols
-
-    def _fetch_from_mexc(self, max_symbols: int, min_volume: float) -> List[str]:
-        """Fetch from MEXC via ccxt (uses ticker endpoint for volumes)."""
-        if not self._mexc:
-            return []
-        try:
-            tickers = self._mexc.fetch_tickers()
-            candidates = []
-
+        for eid, tickers in all_tickers.items():
             for symbol, data in tickers.items():
                 if '/USDT' not in symbol:
                     continue
-                # Skip non-spot symbols
+                # Skip derivatives for symbol discovery
                 if ':' in symbol:
                     continue
 
@@ -105,60 +119,61 @@ class DynamicScanner:
                 if any(kw in base for kw in BANNED_KEYWORDS):
                     continue
 
-                # Check market status
-                market_info = self._mexc.markets.get(symbol, {})
-                if not market_info.get('active', True):
-                    continue
-
                 vol_24h = float(data.get('quoteVolume', 0) or 0)
-                if vol_24h < min_volume:
-                    continue
 
-                candidates.append({
-                    'symbol': symbol,
-                    'volume': vol_24h,
-                })
+                if base not in merged:
+                    merged[base] = {
+                        'symbol': f"{base}/USDT",
+                        'total_volume': 0,
+                        'exchanges': [],
+                        'last_price': 0,
+                    }
+                merged[base]['total_volume'] += vol_24h
+                merged[base]['exchanges'].append(eid)
+                price = float(data.get('last', 0) or 0)
+                if price > 0:
+                    merged[base]['last_price'] = price
 
-            candidates.sort(key=lambda x: x['volume'], reverse=True)
-            return [c['symbol'] for c in candidates[:max_symbols]]
+        # Filter and sort
+        candidates = [
+            v for v in merged.values()
+            if v['total_volume'] >= min_volume
+        ]
+        candidates.sort(key=lambda x: x['total_volume'], reverse=True)
+        candidates = candidates[:max_symbols]
 
-        except Exception as e:
-            logger.error(f"[SCANNER] MEXC fetch failed: {e}")
-            return []
+        symbols = [c['symbol'] for c in candidates]
+        exchange_map = {c['symbol']: c['exchanges'] for c in candidates}
 
-    def _fetch_from_fallback(self, max_symbols: int, min_volume: float) -> List[str]:
-        """Fetch from fallback exchange (Bybit)."""
-        try:
-            tickers = self.fallback_exchange.fetch_tickers()
-            candidates = []
+        with self._lock:
+            self._symbols = symbols
+            self._exchange_map = exchange_map
+            self._last_refresh = time.time()
 
-            for symbol, data in tickers.items():
-                if '/USDT' not in symbol:
-                    continue
+        # Log summary
+        sources = {eid for eid in all_tickers}
+        examples = ', '.join(s.replace('/USDT', '') for s in symbols[:8])
+        logger.warning(
+            f"[SCANNER] Loaded {len(symbols)} symbols from {', '.join(sources)} "
+            f"(top {max_symbols} by combined volume)"
+        )
+        logger.warning(f"[SCANNER] Example: {examples}...")
 
-                base = symbol.split('/')[0]
-                if base in BANNED_BASES:
-                    continue
-                if any(kw in base for kw in BANNED_KEYWORDS):
-                    continue
+        if candidates:
+            top = candidates[0]
+            logger.info(
+                f"[SCANNER] #1: {top['symbol']} — "
+                f"${top['total_volume']:,.0f} vol across {', '.join(top['exchanges'])}"
+            )
 
-                vol_24h = float(data.get('quoteVolume', 0) or 0)
-                if vol_24h < min_volume:
-                    continue
-
-                candidates.append({
-                    'symbol': symbol,
-                    'volume': vol_24h,
-                })
-
-            candidates.sort(key=lambda x: x['volume'], reverse=True)
-            return [c['symbol'] for c in candidates[:max_symbols]]
-
-        except Exception as e:
-            logger.error(f"[SCANNER] Fallback fetch failed: {e}")
-            return []
+        return symbols
 
     def get_top_pairs(self, limit: int = 20) -> List[str]:
         """Get top N symbols from cached list. Compatible with SymbolSelector interface."""
         syms = self.symbols
         return syms[:limit]
+
+    def get_exchanges_for_symbol(self, symbol: str) -> List[str]:
+        """Return which exchanges list this symbol."""
+        with self._lock:
+            return self._exchange_map.get(symbol, [])
