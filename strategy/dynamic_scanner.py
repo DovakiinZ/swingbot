@@ -157,20 +157,11 @@ class DynamicScanner:
                 if price > 0:
                     merged[base]['last_price'] = price
 
-        # Filter: min volume + must exist on data exchange (where we fetch OHLCV)
-        candidates = []
-        skipped_no_data = 0
-        for v in merged.values():
-            if v['total_volume'] < min_volume:
-                continue
-            # Only include if the data exchange has this symbol
-            if self._data_exchange_symbols and v['symbol'] not in self._data_exchange_symbols:
-                skipped_no_data += 1
-                continue
-            candidates.append(v)
-
-        if skipped_no_data:
-            logger.info(f"[SCANNER] Skipped {skipped_no_data} symbols not on data exchange")
+        # Filter by minimum volume (MarketData handles exchange fallback for OHLCV)
+        candidates = [
+            v for v in merged.values()
+            if v['total_volume'] >= min_volume and len(v['exchanges']) >= 1
+        ]
         candidates.sort(key=lambda x: x['total_volume'], reverse=True)
         candidates = candidates[:max_symbols]
 
