@@ -19,6 +19,9 @@ class DashboardState:
             "breaker_status": "OK",
             "scanner_enabled": False,
             "max_positions": 1,
+            "committee_last_decision": None,
+            "committee_scores": {"buy": 0, "sell": 0},
+            "sentiment_total": 0,
         }
 
     def update(self, updates: Dict[str, Any]):

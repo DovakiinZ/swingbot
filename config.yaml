@@ -74,8 +74,25 @@ db_path: "swingbot.db"
 # -- Paper Trading -------------------------------------------------------------
 paper_start_balance_usdt: 1000.0
 
-# -- Sentiment Gate ------------------------------------------------------------
+# -- Dynamic Symbol Scanner ----------------------------------------------------
+dynamic_symbols: true            # Fetch all USDT pairs from MEXC dynamically
+max_symbols: 50                  # Top N symbols by 24h volume
+min_24h_volume_usdt: 1000000     # Minimum $1M daily volume to include
+
+# -- Sentiment (4-source engine) -----------------------------------------------
 sentiment_threshold: 0
+fear_greed_enabled: true
+cryptopanic_token: ""            # Get from cryptopanic.com/developers/api
+santiment_token: ""              # Get from app.santiment.net
+lunarcrush_token: ""             # Get from lunarcrush.com
+
+# -- Committee Agent Weights ---------------------------------------------------
+committee_enabled: true
+trend_agent_weight: 0.25
+momentum_agent_weight: 0.20
+sentiment_agent_weight: 0.25
+risk_agent_weight: 0.20
+pattern_agent_weight: 0.10
 
 # -- Volume Filter -------------------------------------------------------------
 min_volume_usdt: 10000000

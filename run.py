@@ -34,6 +34,8 @@ from strategy.rsi_ema import RsiEmaStrategy
 from strategy.regimes import RegimeDetector
 from strategy.scanner import MarketScanner
 from strategy.signal_scorer import SignalScorer
+from strategy.dynamic_scanner import DynamicScanner
+from strategy.committee import Committee, check_entry_gates
 from risk.risk_engine import RiskEngine
 from risk.circuit_breakers import CircuitBreaker
 from execution.broker_paper import PaperBroker
@@ -326,8 +328,17 @@ def main():
     signal_scorer   = SignalScorer(threshold=CONFIG.get('signal_score_threshold', 70))
     bandit          = Bandit(store, exploration_prob=CONFIG['bandit']['exploration_prob'])
     reporter        = DailyReport(store)
-    sentiment_engine = SentimentEngine()
+    sentiment_engine = SentimentEngine(config=CONFIG)
     selector        = SymbolSelector(market.exchange, market=market)   # uses data exchange (Bybit)
+
+    # Dynamic symbol scanner — fetches top USDT pairs by volume from MEXC
+    dynamic_scanner = None
+    if CONFIG.get('dynamic_symbols', False):
+        dynamic_scanner = DynamicScanner(CONFIG, fallback_exchange=market.exchange)
+        dynamic_scanner.refresh()  # Initial load at startup
+
+    # Committee — 5-agent voting system
+    committee = Committee(config=CONFIG) if CONFIG.get('committee_enabled', False) else None
     ml_model        = SwingbotModel()
 
     # Triple-Barrier labeler for richer training data
@@ -1003,6 +1014,15 @@ def main():
             # Get universe of symbols to scan (always scan for dashboard display)
             if args.symbol:
                 scan_candidates = [args.symbol]
+            elif dynamic_scanner and CONFIG.get('dynamic_symbols', False):
+                try:
+                    scan_candidates = dynamic_scanner.get_top_pairs(limit=SCAN_TOP_N)
+                except Exception as e:
+                    logger.error(f"Dynamic scanner failed, falling back: {e}")
+                    scan_candidates = selector.get_top_pairs(
+                        limit=SCAN_TOP_N,
+                        min_volume_usdt=CONFIG.get('min_volume_usdt', 10_000_000)
+                    )
             else:
                 try:
                     scan_candidates = selector.get_top_pairs(
@@ -1182,6 +1202,48 @@ def main():
                     logger.warning(f"[SKIP] {sym}: {reason}")
                     continue
 
+                # -- Committee voting + gate check ----------------------------
+                if committee and sig is not None:
+                    # Get enhanced sentiment for this symbol
+                    sent_data = sentiment_engine.get_combined_sentiment(symbol=sym)
+                    sent_decision = sent_data.get('decision', 'NEUTRAL')
+                    sent_size_mult = sent_data.get('size_multiplier', 1.0)
+
+                    # Committee vote
+                    committee_result = committee.vote(
+                        df, regime, symbol=sym,
+                        sentiment_data=sent_data,
+                        daily_pnl=day_pnl,
+                        max_daily_loss=CONFIG.get('max_daily_loss_usd', 15.0),
+                        open_positions=len(open_positions),
+                        max_positions=risk_engine.max_open_positions,
+                    )
+
+                    # Update dashboard state
+                    dashboard_state['committee_last_decision'] = committee_result['decision']
+                    dashboard_state['committee_scores'] = {
+                        'buy': committee_result['buy_score'],
+                        'sell': committee_result['sell_score'],
+                    }
+                    dashboard_state['sentiment_total'] = sent_data.get('total_score', 0)
+
+                    # Gate check — all 6 must pass
+                    open_syms = {p.symbol for p in open_positions}
+                    gates_passed, gate_log = check_entry_gates(
+                        committee_decision=committee_result['decision'],
+                        signal_score=cand_score,
+                        sentiment_decision=sent_decision,
+                        regime=regime,
+                        daily_pnl=day_pnl,
+                        max_daily_loss=CONFIG.get('max_daily_loss_usd', 15.0),
+                        symbol=sym,
+                        open_symbols=open_syms,
+                        signal_score_threshold=CONFIG.get('signal_score_threshold', 70),
+                    )
+
+                    if not gates_passed:
+                        continue
+
                 # ML model gate
                 ml_features = FeatureEngine.extract_ml_features(
                     df=df,
@@ -1241,6 +1303,14 @@ def main():
                     )
                 risk_scale = 1.0 if SNIPER_MODE else status.get('risk_scale', 1.0)
                 size = base_size * risk_scale * btc_factor * (risk_mult if conservative else 1.0)
+
+                # Sentiment size multiplier (from committee)
+                try:
+                    if committee and sent_size_mult < 1.0:
+                        size *= sent_size_mult
+                        logger.info(f"[SENTIMENT] {sym}: size x{sent_size_mult:.1f}")
+                except NameError:
+                    pass
 
                 # Breakout size multiplier
                 if breakout_detected:
