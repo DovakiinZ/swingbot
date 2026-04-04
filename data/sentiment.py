@@ -17,6 +17,7 @@ If any source fails or has no API key → skip gracefully, score = 0.
 import logging
 import time
 from typing import Dict, Any, Optional, Tuple
+from pathlib import Path
 
 import requests
 
@@ -39,7 +40,7 @@ class SentimentEngine:
         self.config = config or {}
         self.fng_url = "https://api.alternative.me/fng/?limit=1"
 
-        # Cached values
+        # Cached values (in-memory, fast)
         self._fng_cache: Dict = {}
         self._fng_time: float = 0
         self._news_cache: Dict = {}
@@ -48,6 +49,22 @@ class SentimentEngine:
         self._social_time: float = 0
         self._lunar_cache: Dict = {}
         self._lunar_time: float = 0
+
+        # Disk cache — survives restarts (optional, graceful if not installed)
+        self._disk_cache = None
+        try:
+            import diskcache
+            cache_dir = Path('data/.sentiment_cache')
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            self._disk_cache = diskcache.Cache(str(cache_dir), expire=3600)
+            # Restore last values from disk on startup
+            cached_fng = self._disk_cache.get('fng')
+            if cached_fng:
+                self._fng_cache = cached_fng
+                self._fng_time = time.time() - FNG_CACHE_TTL + 300  # Treat as 5 min old
+                logger.info(f"[SENTIMENT] Restored F&G from disk cache: {cached_fng.get('value')}")
+        except ImportError:
+            logger.info("[SENTIMENT] diskcache not installed — using memory-only cache")
 
     # ── Source 1: Fear & Greed Index ────────────────────────────────────
 
@@ -73,6 +90,8 @@ class SentimentEngine:
                 }
                 self._fng_cache = result
                 self._fng_time = now
+                if self._disk_cache:
+                    self._disk_cache.set('fng', result)
                 return result
         except Exception as e:
             logger.warning(f"[SENTIMENT] Fear&Greed unavailable: {e}")

@@ -1,7 +1,12 @@
 import pandas as pd
+import numpy as np
 import ta
+import logging
 from typing import List, Dict
 from core.types import Candle
+
+logger = logging.getLogger(__name__)
+
 
 class FeatureEngine:
     @staticmethod
@@ -13,11 +18,11 @@ class FeatureEngine:
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
 
-        # Trend
+        # ── Trend ────────────────────────────────────────────────────────
         df['ema_fast'] = ta.trend.EMAIndicator(close=df['close'], window=20).ema_indicator()
         df['ema_slow'] = ta.trend.EMAIndicator(close=df['close'], window=50).ema_indicator()
 
-        # Momentum
+        # ── Momentum ─────────────────────────────────────────────────────
         df['rsi'] = ta.momentum.RSIIndicator(close=df['close'], window=14).rsi()
         df['rsi_7'] = ta.momentum.RSIIndicator(close=df['close'], window=7).rsi()
 
@@ -27,7 +32,7 @@ class FeatureEngine:
         df['macd_signal'] = macd_ind.macd_signal()
         df['macd_hist'] = macd_ind.macd_diff()
 
-        # Volatility
+        # ── Volatility ───────────────────────────────────────────────────
         df['atr'] = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14).average_true_range()
         df['atr_percent'] = (df['atr'] / df['close']) * 100
 
@@ -37,13 +42,38 @@ class FeatureEngine:
         df['bb_lower'] = bb.bollinger_lband()
         df['bb_mid']   = bb.bollinger_mavg()
 
-        # Volume MA + ratio (how much above/below average)
+        # ── Volume ───────────────────────────────────────────────────────
         df['volume_ma'] = df['volume'].rolling(window=20).mean()
         df['volume_ratio'] = df['volume'] / df['volume_ma'].replace(0, 1)
 
-        # ADX for regime
+        # ── ADX for regime ───────────────────────────────────────────────
         adx = ta.trend.ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=14)
         df['adx'] = adx.adx()
+
+        # ── Advanced indicators (pure numpy — no external deps) ────────
+        try:
+            # Supertrend (10, 3.0) — trend-following flip indicator
+            # 1 = bullish (price above line), -1 = bearish (price below)
+            st_line, st_dir = _compute_supertrend(df, length=10, multiplier=3.0)
+            df['supertrend'] = st_line
+            df['supertrend_dir'] = st_dir
+
+            # VWAP — Volume Weighted Average Price (cumulative intraday)
+            # Price above VWAP = bullish, below = bearish
+            cum_vol = df['volume'].cumsum()
+            cum_vp = (df['close'] * df['volume']).cumsum()
+            df['vwap'] = cum_vp / cum_vol.replace(0, np.nan)
+
+            # Stochastic RSI (14, 3, 3) — faster overbought/oversold than RSI
+            rsi_series = df['rsi']
+            rsi_min = rsi_series.rolling(14).min()
+            rsi_max = rsi_series.rolling(14).max()
+            rsi_range = rsi_max - rsi_min
+            df['stoch_rsi_k'] = ((rsi_series - rsi_min) / rsi_range.replace(0, np.nan)).rolling(3).mean() * 100
+            df['stoch_rsi_d'] = df['stoch_rsi_k'].rolling(3).mean()
+
+        except Exception as e:
+            logger.debug(f"[Features] Advanced indicators failed: {e}")
 
         return df
 
@@ -165,3 +195,59 @@ class FeatureEngine:
             return float(np.corrcoef(corr, btc_corr)[0, 1])
         except Exception:
             return 0.0
+
+
+def _compute_supertrend(df: pd.DataFrame, length: int = 10,
+                        multiplier: float = 3.0):
+    """
+    Supertrend indicator — pure numpy implementation.
+    Returns (supertrend_line, direction) where direction is 1 (bull) or -1 (bear).
+
+    Logic:
+      - Upper band = HL2 + (ATR * multiplier)
+      - Lower band = HL2 - (ATR * multiplier)
+      - If close > previous upper band → flip to bullish
+      - If close < previous lower band → flip to bearish
+    """
+    hl2 = (df['high'] + df['low']) / 2
+    atr = ta.volatility.AverageTrueRange(
+        high=df['high'], low=df['low'], close=df['close'], window=length
+    ).average_true_range()
+
+    upper = hl2 + (multiplier * atr)
+    lower = hl2 - (multiplier * atr)
+
+    n = len(df)
+    st_line = np.zeros(n)
+    st_dir = np.ones(n)  # 1 = bullish
+
+    close = df['close'].values.copy()
+    upper_v = upper.values.copy()
+    lower_v = lower.values.copy()
+
+    for i in range(1, n):
+        # Ratchet bands (only tighten, never widen)
+        if not np.isnan(lower_v[i]) and not np.isnan(lower_v[i - 1]):
+            if lower_v[i] < lower_v[i - 1] and close[i - 1] > lower_v[i - 1]:
+                lower_v[i] = lower_v[i - 1]
+        if not np.isnan(upper_v[i]) and not np.isnan(upper_v[i - 1]):
+            if upper_v[i] > upper_v[i - 1] and close[i - 1] < upper_v[i - 1]:
+                upper_v[i] = upper_v[i - 1]
+
+        # Direction flip
+        if st_dir[i - 1] == 1:  # was bullish
+            if close[i] < lower_v[i]:
+                st_dir[i] = -1
+                st_line[i] = upper_v[i]
+            else:
+                st_dir[i] = 1
+                st_line[i] = lower_v[i]
+        else:  # was bearish
+            if close[i] > upper_v[i]:
+                st_dir[i] = 1
+                st_line[i] = lower_v[i]
+            else:
+                st_dir[i] = -1
+                st_line[i] = upper_v[i]
+
+    return pd.Series(st_line, index=df.index), pd.Series(st_dir, index=df.index)
