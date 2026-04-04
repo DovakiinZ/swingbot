@@ -1,13 +1,10 @@
 # ==============================================================================
-# SWINGBOT CONFIGURATION
+# SWINGBOT CONFIGURATION — Production Ready
 # ==============================================================================
 
-# -- Exchange Architecture -----------------------------------------------------
-# trading_exchange   : where orders are placed (your account — MEXC)
-# market_data_exchange: where we READ prices/candles/funding rates (Bybit — public API)
-# Bybit and Binance are used READ-ONLY as market indicators, no API keys needed
+# -- Exchange ------------------------------------------------------------------
 trading_exchange: mexc
-market_data_exchange: bybit          # public API only — no auth needed
+market_data_exchange: bybit
 bybit_account_type: spot
 trading_mode: paper
 
@@ -17,51 +14,47 @@ scan_interval_minutes: 10
 # -- Strategy & Scanning -------------------------------------------------------
 timeframe: "1h"
 lookback: 100
-scan_top_n: 20
+scan_top_n: 30
 scanner:
   enabled: true
   breakout_lookback: 20
   btc_correlation_factor: 0.7
 
-# -- Multi-Timeframe Confluence (MTF) -----------------------------------------
-# Research: Adding 4H filter raises Profit Factor from ~1.4 to ~2.0+
-# Only take 1H longs when 4H trend is up; only take 1H shorts when 4H is down
-mtf_filter_enabled: true
+# -- Multi-Timeframe Confluence ------------------------------------------------
+mtf_filter_enabled: false
 htf_timeframe: "4h"
 htf_ema_period: 200
 
-# -- Funding Rate Filter (Bybit public API) ------------------------------------
-# Positive funding = longs overcrowded → avoid new longs
-# Negative funding = shorts overcrowded → avoid new shorts
-funding_rate_filter: true
-funding_long_block: 0.0008    # Block longs if funding > 0.08%/8h
-funding_short_block: -0.0005  # Block shorts if funding < -0.05%/8h
+# -- Funding Rate Filter -------------------------------------------------------
+funding_rate_filter: false
+funding_long_block: 0.0008
+funding_short_block: -0.0005
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 50                  # Lowered for paper mode — need trades to collect ML training data
-min_rr_ratio: 1.8             # FIX 4: Minimum Risk:Reward ratio (rejects trades where loss > gain)
-volume_multiplier: 1.2         # FIX 5: Current volume must be >= 1.2x 20-period average
-signal_score_threshold: 40     # Signal scorer threshold (lower for paper mode to collect data)
+min_score: 40
+min_rr_ratio: 1.5
+volume_multiplier: 1.0
+signal_score_threshold: 35
 
 # -- Risk Management -----------------------------------------------------------
-risk_per_trade_percent: 2.0    # FIX 6: Risk 2% of balance per trade (was 1%)
-max_risk_per_trade_pct: 2.0    # FIX 6: Hard cap on risk per trade
+risk_per_trade_percent: 2.0
+max_risk_per_trade_pct: 2.0
 max_open_positions: 3
 max_portfolio_risk_percent: 5.0
 max_single_position_percent: 30.0
 daily_loss_limit_percent: 5.0
-max_daily_loss_usd: 15.0       # FIX 7: Hard dollar daily loss limit — stop all trading
+max_daily_loss_usd: 15.0
 consecutive_loss_limit: 5
 api_failure_limit: 5
 
-# -- Compounding Plan ($100 -> $1000) ------------------------------------------
+# -- Compounding ---------------------------------------------------------------
 base_balance: 1000.0
 peak_balance_tracking: true
 drawdown_reset_threshold: 0.20
 
 # -- Market Regime Detection ---------------------------------------------------
-regime_adx_threshold: 20       # ADX >= this = trending, below = ranging (skip)
+regime_adx_threshold: 15
 
 # -- Breakout Detection --------------------------------------------------------
 breakout_lookback: 20
@@ -74,20 +67,20 @@ db_path: "swingbot.db"
 # -- Paper Trading -------------------------------------------------------------
 paper_start_balance_usdt: 1000.0
 
-# -- Dynamic Symbol Scanner ----------------------------------------------------
-dynamic_symbols: true            # Fetch all USDT pairs from MEXC dynamically
-max_symbols: 50                  # Top N symbols by 24h volume
-min_24h_volume_usdt: 1000000     # Minimum $1M daily volume to include
+# -- Dynamic Symbol Scanner (Binance + Bybit + MEXC) --------------------------
+dynamic_symbols: true
+max_symbols: 50
+min_24h_volume_usdt: 1000000
 
 # -- Sentiment (4-source engine) -----------------------------------------------
 sentiment_threshold: 0
 fear_greed_enabled: true
-cryptopanic_token: ""            # Get from cryptopanic.com/developers/api
-santiment_token: ""              # Get from app.santiment.net
-lunarcrush_token: ""             # Get from lunarcrush.com
+cryptopanic_token: ""
+santiment_token: ""
+lunarcrush_token: ""
 
 # -- Committee Agent Weights ---------------------------------------------------
-committee_enabled: true
+committee_enabled: false
 trend_agent_weight: 0.25
 momentum_agent_weight: 0.20
 sentiment_agent_weight: 0.25
@@ -95,9 +88,9 @@ risk_agent_weight: 0.20
 pattern_agent_weight: 0.10
 
 # -- Volume Filter -------------------------------------------------------------
-min_volume_usdt: 10000000
+min_volume_usdt: 5000000
 
-# -- Polymarket (Macro Filter) -------------------------------------------------
+# -- Polymarket ----------------------------------------------------------------
 polymarket:
   enabled: false
   update_hours: 6
@@ -108,11 +101,11 @@ polymarket:
 bandit:
   exploration_prob: 0.2
 
-# -- Trading Hours (UTC) -------------------------------------------------------
+# -- Trading Hours -------------------------------------------------------------
 trading_hours:
-  enabled: false               # Disabled: trade any hour in paper mode
+  enabled: false
 
-# -- Account Info --------------------------------------------------------------
+# -- Account -------------------------------------------------------------------
 account_name: "Swingbot Paper"
 live: false
 show_balances_on_startup: true
@@ -123,7 +116,7 @@ lang: "en"
 # -- WebSocket Real-Time Monitor -----------------------------------------------
 websocket:
   enabled: true
-  symbols:                    # Symbols to monitor at startup
+  symbols:
     - BTC/USDT
     - ETH/USDT
     - SOL/USDT
@@ -135,31 +128,31 @@ websocket:
     - DOT/USDT
     - MATIC/USDT
 
-# -- ATR-Based Stop Loss / Take Profit (FIX 3) ---------------------------------
-atr_multiplier_sl: 1.5        # SL = entry ± (ATR × 1.5). Dynamic ATR-based stop loss
-atr_multiplier_tp: 3.0        # TP = entry ± (ATR × 3.0). Gives 2:1 R:R minimum
+# -- ATR-Based Stop Loss / Take Profit -----------------------------------------
+atr_multiplier_sl: 1.5
+atr_multiplier_tp: 3.0
 
-# -- Trailing Stop (FIX 8) ----------------------------------------------------
-trailing_stop_activate_pct: 0.01  # Activate trailing stop after +1% profit
-trailing_stop_trail_pct: 0.008    # Trail 0.8% behind current price
+# -- Trailing Stop -------------------------------------------------------------
+trailing_stop_activate_pct: 0.01
+trailing_stop_trail_pct: 0.008
 
 # -- Momentum Breakout Strategy ------------------------------------------------
-momentum_min_change: 0.003    # 0.3% price move to trigger (lower = more trades)
-momentum_min_volume: 2.0      # 2x average volume required
-momentum_sl_mult: 2.0         # Stop loss = 2.0x ATR (was 1.5 — too tight)
-momentum_tp_mult: 4.0         # Take profit = 4.0x ATR (was 2.5 — now 2:1 R:R)
-momentum_cooldown_sec: 300    # 5 min between signals per symbol
+momentum_min_change: 0.003
+momentum_min_volume: 1.5
+momentum_sl_mult: 2.0
+momentum_tp_mult: 4.0
+momentum_cooldown_sec: 300
 
-# -- Trailing Entry (passivbot technique) --------------------------------------
+# -- Trailing Entry ------------------------------------------------------------
 trailing_entry:
-  enabled: false               # false = enter immediately, true = wait for pullback
-  pullback_pct: 0.003          # Wait for 0.3% pullback before entering
-  expiry_seconds: 3600         # Cancel if no pullback within 1 hour
+  enabled: false
+  pullback_pct: 0.003
+  expiry_seconds: 3600
 
 # -- Kelly Criterion Sizing ----------------------------------------------------
 kelly_sizing:
-  enabled: false               # false = use phase-based risk, true = use Kelly formula
-  fraction: 0.25               # Quarter-Kelly (conservative). Full Kelly = 1.0 (risky)
+  enabled: false
+  fraction: 0.25
 
 # -- Notifications -------------------------------------------------------------
 notifications:
