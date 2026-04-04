@@ -91,6 +91,16 @@ class RsiEmaStrategy:
             rsi_ok = rsi < params.rsi_entry
             vol_ok = atr_pct < 5.0
 
+            if not (trend_ok and rsi_ok and vol_ok):
+                reasons = []
+                if not trend_ok:
+                    reasons.append(f"trend DOWN (fast={ema_fast:.2f} < slow={ema_slow:.2f})")
+                if not rsi_ok:
+                    reasons.append(f"RSI {rsi:.1f} >= {params.rsi_entry} (not oversold)")
+                if not vol_ok:
+                    reasons.append(f"ATR% {atr_pct:.1f} >= 5.0 (too volatile)")
+                logger.info(f"[NO_SIG] {symbol}: long blocked — {'; '.join(reasons)}")
+
             if trend_ok and rsi_ok and vol_ok:
                 if not bullish_confirmed:
                     logger.info(f"[SKIP] {symbol}: SKIPPED — trend not confirmed (need 3 bullish candles for BUY)")

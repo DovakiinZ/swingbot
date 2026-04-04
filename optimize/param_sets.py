@@ -4,8 +4,8 @@ import copy
 # Base defaults
 DEFAULT_PARAMS = StrategyParams(
     rsi_period=14,
-    rsi_entry=35,    # Was 30 — too strict, misses RSI 30-35 oversold bounces
-    rsi_exit=70,
+    rsi_entry=45,    # Widened for paper mode — RSI < 45 triggers long (was 35, too strict)
+    rsi_exit=55,     # Widened for paper mode — RSI > 55 triggers short (was 70, too strict)
     ema_fast=20,
     ema_slow=50,
     atr_period=14,
@@ -23,13 +23,13 @@ ARMS.append(copy.deepcopy(DEFAULT_PARAMS))
 # Arm 2: Sensitive RSI
 params = copy.deepcopy(DEFAULT_PARAMS)
 params.rsi_period = 10
-params.rsi_entry = 35
+params.rsi_entry = 48
 ARMS.append(params)
 
 # Arm 3: Conservative RSI
 params = copy.deepcopy(DEFAULT_PARAMS)
 params.rsi_period = 21
-params.rsi_entry = 25
+params.rsi_entry = 40
 ARMS.append(params)
 
 # Arm 4: Wide stops, big targets — trend-following mode, sl=3.0/tp=8.0 → R:R=2.67
@@ -56,9 +56,9 @@ params.ema_fast = 9
 params.ema_slow = 21
 ARMS.append(params)
 
-# Arm 8: High Volatility — deep oversold only, sl=4.0/tp=10.0 → R:R=2.5
+# Arm 8: High Volatility — deeper oversold, sl=4.0/tp=10.0 → R:R=2.5
 params = copy.deepcopy(DEFAULT_PARAMS)
-params.rsi_entry = 20   # Deep oversold only
+params.rsi_entry = 35   # More selective than default but still reachable
 params.sl_mult   = 4.0  # Wide stop for volatile assets
 params.tp_mult   = 10.0 # Big target to compensate wide stop
 ARMS.append(params)
