@@ -37,11 +37,14 @@ class DynamicScanner:
     across Binance, Bybit, and MEXC. Thread-safe. Auto-refreshes every 4h.
     """
 
-    def __init__(self, config: dict, fallback_exchange: Optional[ccxt.Exchange] = None):
+    def __init__(self, config: dict, fallback_exchange: Optional[ccxt.Exchange] = None,
+                 data_exchange: Optional[ccxt.Exchange] = None):
         self.config = config
         self.fallback_exchange = fallback_exchange
+        self.data_exchange = data_exchange  # Exchange used for OHLCV (must have the symbol)
         self._symbols: List[str] = []
         self._exchange_map: Dict[str, List[str]] = {}  # symbol → list of exchanges that have it
+        self._data_exchange_symbols: set = set()  # symbols available on the data exchange
         self._last_refresh: float = 0
         self._lock = threading.Lock()
 
@@ -54,6 +57,26 @@ class DynamicScanner:
                 logger.info(f"[SCANNER] {eid} connected (public API)")
             except Exception as e:
                 logger.warning(f"[SCANNER] {eid} init failed: {e}")
+
+        # Load available symbols from the data exchange (for filtering)
+        self._load_data_exchange_symbols()
+
+    def _load_data_exchange_symbols(self) -> None:
+        """Load the list of symbols available on the data exchange (Bybit)."""
+        ex = self.data_exchange
+        if not ex:
+            # Fall back to the bybit instance we created
+            ex = self._exchanges.get('bybit')
+        if not ex:
+            return
+        try:
+            markets = ex.load_markets()
+            self._data_exchange_symbols = {
+                sym for sym in markets.keys() if '/USDT' in sym
+            }
+            logger.info(f"[SCANNER] Data exchange has {len(self._data_exchange_symbols)} USDT symbols")
+        except Exception as e:
+            logger.warning(f"[SCANNER] Could not load data exchange markets: {e}")
 
     @property
     def symbols(self) -> List[str]:
@@ -134,11 +157,20 @@ class DynamicScanner:
                 if price > 0:
                     merged[base]['last_price'] = price
 
-        # Filter and sort
-        candidates = [
-            v for v in merged.values()
-            if v['total_volume'] >= min_volume
-        ]
+        # Filter: min volume + must exist on data exchange (where we fetch OHLCV)
+        candidates = []
+        skipped_no_data = 0
+        for v in merged.values():
+            if v['total_volume'] < min_volume:
+                continue
+            # Only include if the data exchange has this symbol
+            if self._data_exchange_symbols and v['symbol'] not in self._data_exchange_symbols:
+                skipped_no_data += 1
+                continue
+            candidates.append(v)
+
+        if skipped_no_data:
+            logger.info(f"[SCANNER] Skipped {skipped_no_data} symbols not on data exchange")
         candidates.sort(key=lambda x: x['total_volume'], reverse=True)
         candidates = candidates[:max_symbols]
 

@@ -331,10 +331,13 @@ def main():
     sentiment_engine = SentimentEngine(config=CONFIG)
     selector        = SymbolSelector(market.exchange, market=market)   # uses data exchange (Bybit)
 
-    # Dynamic symbol scanner — fetches top USDT pairs by volume from MEXC
+    # Dynamic symbol scanner — fetches top USDT pairs by combined volume
     dynamic_scanner = None
     if CONFIG.get('dynamic_symbols', False):
-        dynamic_scanner = DynamicScanner(CONFIG, fallback_exchange=market.exchange)
+        dynamic_scanner = DynamicScanner(
+            CONFIG, fallback_exchange=market.exchange,
+            data_exchange=market.exchange  # Only return symbols that exist here (Bybit)
+        )
         dynamic_scanner.refresh()  # Initial load at startup
 
     # Committee — 5-agent voting system
