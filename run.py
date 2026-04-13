@@ -11,7 +11,7 @@ import argparse
 import time
 import threading
 import queue
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
 import os
 
@@ -427,7 +427,7 @@ def main():
     lookback  = CONFIG['lookback']
 
     # --- State ----------------------------------------------------------------
-    last_summary_date = datetime.utcnow().strftime('%Y-%m-%d')
+    last_summary_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
     dashboard_state = {
         "positions_summary": [],
@@ -581,13 +581,13 @@ def main():
         }
 
         try:
-            logger.debug(f"=== Cycle Start: {datetime.utcnow()} ===")
+            logger.debug(f"=== Cycle Start: {datetime.now(timezone.utc)} ===")
 
             # -- Balance / P&L sync -------------------------------------------
             current_bal = broker.get_balance()
             risk_engine.total_capital = current_bal
 
-            today_str   = datetime.utcnow().strftime('%Y-%m-%d')
+            today_str   = datetime.now(timezone.utc).strftime('%Y-%m-%d')
             daily_stats = store.get_daily_stats(today_str)
             day_pnl     = daily_stats.get('pnl', 0.0)
             status['pnl'] = day_pnl
@@ -880,7 +880,7 @@ def main():
             ]
 
             logger.warning(
-                f"[CYCLE] {datetime.utcnow().strftime('%H:%M:%S')} UTC | "
+                f"[CYCLE] {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC | "
                 f"Balance: ${current_bal:.2f} | Open positions: {len(open_positions)} | "
                 f"Day PnL: {day_pnl:+.2f} | Macro scale: {status['risk_scale']:.2f}"
             )
@@ -1374,7 +1374,7 @@ def main():
             # Update dashboard
             open_positions = broker.get_open_positions()
             dashboard_state['open_positions_count'] = len(open_positions)
-            dashboard_state['last_cycle'] = datetime.utcnow().isoformat()
+            dashboard_state['last_cycle'] = datetime.now(timezone.utc).isoformat()
 
             if open_positions:
                 status['pos_state'] = "OPEN"
@@ -1399,7 +1399,7 @@ def main():
             # Daily report (at configured hour)
             try:
                 report_hour = CONFIG.get('notifications', {}).get('daily_report_hour_utc', 8)
-                now_utc = datetime.utcnow()
+                now_utc = datetime.now(timezone.utc)
                 if now_utc.hour == report_hour and now_utc.minute < 11:
                     stats = store.get_daily_trade_stats(today_str)
                     if stats.get('count', 0) > 0:
@@ -1427,7 +1427,7 @@ def main():
             status['price'] = '-'
         try:
             line = format_status_line(
-                datetime.utcnow(),
+                datetime.now(timezone.utc),
                 status['active_symbol'],
                 status['price'],
                 status['signal'],

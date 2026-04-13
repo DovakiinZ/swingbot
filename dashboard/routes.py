@@ -195,9 +195,10 @@ def create_app(store=None, state=None, config: dict = None):
             interval = config.get('scan_interval_minutes', 10) * 60
         if last_cycle:
             try:
-                from datetime import datetime
                 last_dt = datetime.fromisoformat(last_cycle)
-                elapsed = (datetime.utcnow() - last_dt).total_seconds()
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
                 next_scan = max(0, int(interval - elapsed))
             except Exception:
                 next_scan = 0

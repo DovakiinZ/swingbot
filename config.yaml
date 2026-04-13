@@ -6,7 +6,7 @@
 trading_exchange: mexc
 market_data_exchange: bybit
 bybit_account_type: spot
-trading_mode: paper
+trading_mode: live
 
 # -- Scan Speed ----------------------------------------------------------------
 scan_interval_minutes: 10
@@ -106,8 +106,8 @@ trading_hours:
   enabled: false
 
 # -- Account -------------------------------------------------------------------
-account_name: "Swingbot Paper"
-live: false
+account_name: "Swingbot Live"
+live: true
 show_balances_on_startup: true
 
 # -- Localization --------------------------------------------------------------
