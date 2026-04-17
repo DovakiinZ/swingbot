@@ -57,6 +57,8 @@ from core.notifier import Notifier
 from core.health_monitor import HealthMonitor
 from core.trading_hours import is_good_time_to_trade
 from risk.conservative_mode import ConservativeMode
+from risk.protections import ProtectionManager
+from storage.edge_tracker import EdgeTracker
 from reports.weekly_report import WeeklyReport
 from strategy.momentum_breakout import MomentumBreakoutStrategy
 
@@ -368,6 +370,14 @@ def main():
         notifier=notifier, circuit_breaker=circuit_breaker, market=market
     )
     health_monitor.start()
+
+    # Beast Mode: Advanced protections + per-pair edge tracking
+    protection_manager = ProtectionManager(config=CONFIG)
+    edge_tracker = EdgeTracker(db_path=CONFIG.get('db_path', 'swingbot.db'))
+    try:
+        edge_tracker.refresh(lookback_days=30)
+    except Exception as e:
+        logger.warning(f"[EDGE] Initial refresh failed: {e}")
 
     # -- Momentum Strategy -------------------------------------------------
     momentum_strategy = MomentumBreakoutStrategy(
@@ -943,6 +953,13 @@ def main():
                             )
                             # Triple-Barrier labeling
                             label_closed_trade(pos)
+                            # Beast Mode: record trade closure for protections
+                            try:
+                                protection_manager.on_trade_closed(
+                                    sym, pnl, pnl_pct, sig.reason.value, broker.get_balance()
+                                )
+                            except Exception:
+                                pass
                             # Notify exit
                             try:
                                 notifier.notify_exit(sym, sig.reason.value, pnl, pnl_pct,
@@ -977,6 +994,13 @@ def main():
                                 )
                                 # Triple-Barrier labeling
                                 label_closed_trade(pos)
+                                # Beast Mode: record trade closure for protections
+                                try:
+                                    protection_manager.on_trade_closed(
+                                        sym, pnl, pnl_pct, exit_sig.reason.value, broker.get_balance()
+                                    )
+                                except Exception:
+                                    pass
                                 # Notify SL/TP exit
                                 try:
                                     notifier.notify_exit(sym, exit_sig.reason.value, pnl, pnl_pct,
@@ -1130,6 +1154,14 @@ def main():
             funding_long_block  = CONFIG.get('funding_long_block', 0.0008)   # 0.08%/8h
             funding_short_block = CONFIG.get('funding_short_block', -0.0005) # -0.05%/8h
 
+            # Beast Mode: Check global protections before the entry loop
+            global_protection = protection_manager.check_global()
+            if global_protection.blocked:
+                logger.warning(f"[PROTECTION] Global trading paused: {global_protection.reason}")
+                _log_cycle_summary(current_bal, day_pnl, len(open_positions), time.time() - cycle_start)
+                _log_status(status, time.time() - cycle_start, scan_interval_sec)
+                return
+
             entries_opened = 0
             for candidate in scored[:slots_available]:
                 sym    = candidate['symbol']
@@ -1137,6 +1169,18 @@ def main():
                 regime = candidate['regime']
                 cand_score = candidate['score']
                 breakout_detected = candidate.get('breakout_detected', False)
+
+                # Beast Mode: Per-symbol protection check (cooldown, low-profit pairs)
+                sym_protection = protection_manager.check_symbol(sym)
+                if sym_protection.blocked:
+                    logger.info(f"[PROTECTION] {sym} blocked: {sym_protection.reason}")
+                    continue
+
+                # Beast Mode: Edge gate — skip symbols with proven negative edge
+                if not edge_tracker.should_trade(sym):
+                    edge = edge_tracker.get_edge(sym)
+                    logger.info(f"[EDGE] {sym} skipped — edge_score={edge.edge_score:.2f}")
+                    continue
 
                 arm_idx = bandit.select_arm_index()
                 params  = ARMS[arm_idx]
@@ -1314,6 +1358,15 @@ def main():
                         logger.info(f"[SENTIMENT] {sym}: size x{sent_size_mult:.1f}")
                 except NameError:
                     pass
+
+                # Beast Mode: Edge-based size multiplier (proven winners get more)
+                edge_mult = edge_tracker.get_size_multiplier(sym)
+                if edge_mult != 1.0:
+                    size *= edge_mult
+                    edge_info = edge_tracker.get_edge(sym)
+                    if edge_info:
+                        logger.info(f"[EDGE] {sym}: x{edge_mult:.1f} "
+                                    f"(score={edge_info.edge_score:+.2f} over {edge_info.trades} trades)")
 
                 # Breakout size multiplier
                 if breakout_detected:
