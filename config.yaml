@@ -38,13 +38,15 @@ volume_multiplier: 1.0
 signal_score_threshold: 35
 
 # -- Risk Management -----------------------------------------------------------
-risk_per_trade_percent: 2.0
-max_risk_per_trade_pct: 2.0
-max_open_positions: 3
-max_portfolio_risk_percent: 5.0
-max_single_position_percent: 30.0
-daily_loss_limit_percent: 5.0
-max_daily_loss_usd: 15.0
+# Small-account compounding mode: 1 position at a time using 95% of balance
+# Scales up naturally as balance grows: $5 → $10 → $20 → $50 → $100 → $500 → $1000
+risk_per_trade_percent: 3.0
+max_risk_per_trade_pct: 5.0
+max_open_positions: 1
+max_portfolio_risk_percent: 100.0
+max_single_position_percent: 95.0
+daily_loss_limit_percent: 20.0
+max_daily_loss_usd: 50.0
 consecutive_loss_limit: 5
 api_failure_limit: 5
 
