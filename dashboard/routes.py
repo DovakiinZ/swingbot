@@ -1275,4 +1275,257 @@ def create_app(store=None, state=None, config: dict = None):
             }
         )
 
+    # ═══════════════════════════════════════════════════════════════════
+    # BEAST MODE ENDPOINTS — consolidated control for all 5 systems
+    # ═══════════════════════════════════════════════════════════════════
+
+    # In-memory job registry for long-running tasks (hyperopt, monte carlo)
+    _beast_jobs = {'hyperopt': None, 'montecarlo': None}
+
+    @app.route("/api/beast/status")
+    @login_required
+    def api_beast_status():
+        """Get current status of all 5 beast mode systems."""
+        cfg = _load_config()
+
+        # Protection Manager status
+        pm = app.config.get('protection_manager')
+        prot_status = pm.get_status() if pm else {}
+
+        # Edge Tracker status
+        et = app.config.get('edge_tracker')
+        edges_summary = {}
+        if et:
+            try:
+                top_5 = et.top_symbols(n=5)
+                edges_summary = {
+                    'enabled': cfg.get('edge_tracker', {}).get('enabled', True),
+                    'tracked_symbols': len(et._cache),
+                    'positive_edge_count': sum(1 for e in et._cache.values() if e.is_positive_edge),
+                    'top_5': [
+                        {
+                            'symbol': e.symbol, 'trades': e.trades,
+                            'win_rate': e.win_rate, 'edge_score': e.edge_score,
+                        } for e in top_5
+                    ],
+                }
+            except Exception as e:
+                edges_summary = {'error': str(e)}
+
+        # Hyperopt / Monte Carlo job status
+        hyperopt_status = _beast_jobs['hyperopt']
+        montecarlo_status = _beast_jobs['montecarlo']
+
+        # Compute multi-metrics from DB if possible
+        metrics_data = {}
+        try:
+            if store is not None:
+                # get recent closed trades
+                import sqlite3
+                conn = sqlite3.connect(cfg.get('db_path', 'swingbot.db'))
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pnl, pnl_percent FROM trades
+                    WHERE pnl IS NOT NULL AND exit_time IS NOT NULL
+                    ORDER BY exit_time DESC LIMIT 200
+                """)
+                rows = cursor.fetchall()
+                conn.close()
+                trades = [{'pnl': r[0] or 0, 'pnl_pct': r[1] or 0} for r in rows]
+                if trades:
+                    from reports.metrics import compute_all_metrics
+                    start_bal = cfg.get('paper_start_balance_usdt', 1000.0)
+                    metrics_data = compute_all_metrics(trades, initial_balance=start_bal)
+        except Exception as e:
+            metrics_data = {'error': str(e)}
+
+        return jsonify({
+            'protections': prot_status,
+            'edge_tracker': edges_summary,
+            'hyperopt': hyperopt_status,
+            'montecarlo': montecarlo_status,
+            'metrics': metrics_data,
+            'config': {
+                'protections': cfg.get('protections', {}),
+                'edge_tracker': cfg.get('edge_tracker', {}),
+                'hyperopt': cfg.get('hyperopt', {}),
+                'monte_carlo': cfg.get('monte_carlo', {}),
+            },
+        })
+
+    @app.route("/api/beast/protections/toggle", methods=["POST"])
+    @login_required
+    def api_beast_protections_toggle():
+        """Enable/disable individual protections."""
+        data = request.get_json() or {}
+        cfg = _load_config()
+        prot = cfg.setdefault('protections', {})
+        # Accept: stoploss_guard_enabled, cooldown_enabled, max_dd_enabled, low_profit_enabled
+        for key in ['stoploss_guard_enabled', 'cooldown_enabled',
+                    'max_dd_enabled', 'low_profit_enabled']:
+            if key in data:
+                prot[key] = bool(data[key])
+        # Also accept threshold updates
+        for key in ['stoploss_guard_trade_limit', 'stoploss_guard_lookback_min',
+                    'stoploss_guard_pause_hours', 'cooldown_minutes',
+                    'max_dd_pct', 'max_dd_lookback_trades', 'max_dd_pause_hours',
+                    'low_profit_min_trades', 'low_profit_min_wr', 'low_profit_disable_hours']:
+            if key in data:
+                prot[key] = data[key]
+        _save_config(cfg)
+        return jsonify({'success': True, 'message': 'Protections updated — applies next cycle'})
+
+    @app.route("/api/beast/edge/refresh", methods=["POST"])
+    @login_required
+    def api_beast_edge_refresh():
+        """Force-refresh the edge tracker from DB."""
+        et = app.config.get('edge_tracker')
+        if not et:
+            return jsonify({'success': False, 'error': 'Edge tracker not available'})
+        try:
+            lookback = _load_config().get('edge_tracker', {}).get('lookback_days', 30)
+            edges = et.refresh(lookback_days=lookback)
+            return jsonify({
+                'success': True,
+                'tracked_symbols': len(edges),
+                'message': f'Refreshed {len(edges)} symbols',
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route("/api/beast/edge/toggle", methods=["POST"])
+    @login_required
+    def api_beast_edge_toggle():
+        """Enable/disable edge tracker + update settings."""
+        data = request.get_json() or {}
+        cfg = _load_config()
+        et_cfg = cfg.setdefault('edge_tracker', {})
+        if 'enabled' in data:
+            et_cfg['enabled'] = bool(data['enabled'])
+        if 'lookback_days' in data:
+            et_cfg['lookback_days'] = int(data['lookback_days'])
+        if 'min_trades_for_edge' in data:
+            et_cfg['min_trades_for_edge'] = int(data['min_trades_for_edge'])
+        _save_config(cfg)
+        return jsonify({'success': True})
+
+    @app.route("/api/beast/edge/report")
+    @login_required
+    def api_beast_edge_report():
+        """Full edge report for all tracked symbols."""
+        et = app.config.get('edge_tracker')
+        if not et:
+            return jsonify({'symbols': []})
+        try:
+            symbols = sorted(et._cache.values(), key=lambda e: e.edge_score, reverse=True)
+            return jsonify({
+                'symbols': [
+                    {
+                        'symbol': e.symbol, 'trades': e.trades, 'wins': e.wins,
+                        'losses': e.losses, 'win_rate': e.win_rate,
+                        'avg_win_pct': e.avg_win_pct, 'avg_loss_pct': e.avg_loss_pct,
+                        'expectancy': e.expectancy, 'edge_score': e.edge_score,
+                        'confidence': e.confidence,
+                    } for e in symbols
+                ],
+            })
+        except Exception as e:
+            return jsonify({'symbols': [], 'error': str(e)})
+
+    @app.route("/api/beast/hyperopt/run", methods=["POST"])
+    @login_required
+    def api_beast_hyperopt_run():
+        """Start Optuna hyperopt in a background thread."""
+        data = request.get_json() or {}
+        symbol = data.get('symbol', 'BTC/USDT')
+        days = int(data.get('days', 60))
+        trials = int(data.get('trials', 50))
+
+        if _beast_jobs['hyperopt'] and _beast_jobs['hyperopt'].get('status') == 'running':
+            return jsonify({'success': False, 'error': 'Hyperopt already running'})
+
+        _beast_jobs['hyperopt'] = {
+            'status': 'running', 'symbol': symbol, 'days': days, 'trials': trials,
+            'started_at': time.time(), 'result': None,
+        }
+
+        def _run():
+            try:
+                from optimize.hyperopt import StrategyHyperopt
+                opt = StrategyHyperopt(symbol=symbol, days=days, initial_balance=1000.0)
+                result = opt.optimize(n_trials=trials)
+                _beast_jobs['hyperopt']['status'] = 'done'
+                _beast_jobs['hyperopt']['result'] = result
+                _beast_jobs['hyperopt']['finished_at'] = time.time()
+            except Exception as e:
+                _beast_jobs['hyperopt']['status'] = 'error'
+                _beast_jobs['hyperopt']['error'] = str(e)
+
+        t = threading.Thread(target=_run, daemon=True, name='hyperopt')
+        t.start()
+        return jsonify({'success': True, 'message': 'Hyperopt started'})
+
+    @app.route("/api/beast/hyperopt/apply", methods=["POST"])
+    @login_required
+    def api_beast_hyperopt_apply():
+        """Apply the best hyperopt params to config.yaml."""
+        job = _beast_jobs.get('hyperopt')
+        if not job or job.get('status') != 'done' or not job.get('result'):
+            return jsonify({'success': False, 'error': 'No completed hyperopt to apply'})
+
+        best = job['result']['best_params']
+        cfg = _load_config()
+        # Map hyperopt params to config keys
+        cfg['atr_multiplier_sl'] = best.get('atr_sl_mult', cfg.get('atr_multiplier_sl', 1.5))
+        cfg['atr_multiplier_tp'] = best.get('atr_tp_mult', cfg.get('atr_multiplier_tp', 3.0))
+        # RSI thresholds go into a dedicated section the param_sets can read
+        cfg.setdefault('hyperopt_overrides', {})
+        cfg['hyperopt_overrides']['rsi_entry'] = best.get('rsi_entry')
+        cfg['hyperopt_overrides']['rsi_exit'] = best.get('rsi_exit')
+        cfg['hyperopt_overrides']['applied_at'] = datetime.now(timezone.utc).isoformat()
+        _save_config(cfg)
+        return jsonify({
+            'success': True,
+            'applied': {
+                'atr_multiplier_sl': cfg['atr_multiplier_sl'],
+                'atr_multiplier_tp': cfg['atr_multiplier_tp'],
+                'rsi_entry': cfg['hyperopt_overrides']['rsi_entry'],
+                'rsi_exit': cfg['hyperopt_overrides']['rsi_exit'],
+            },
+            'message': 'Best params applied — takes effect next cycle',
+        })
+
+    @app.route("/api/beast/montecarlo/run", methods=["POST"])
+    @login_required
+    def api_beast_montecarlo_run():
+        """Run Monte Carlo validation in a background thread."""
+        data = request.get_json() or {}
+        runs = int(data.get('runs', 1000))
+
+        if _beast_jobs['montecarlo'] and _beast_jobs['montecarlo'].get('status') == 'running':
+            return jsonify({'success': False, 'error': 'Monte Carlo already running'})
+
+        _beast_jobs['montecarlo'] = {
+            'status': 'running', 'runs': runs,
+            'started_at': time.time(), 'result': None,
+        }
+
+        def _run():
+            try:
+                from ml.monte_carlo import run_from_trades_db
+                cfg = _load_config()
+                result = run_from_trades_db(
+                    db_path=cfg.get('db_path', 'swingbot.db'), n_runs=runs
+                )
+                _beast_jobs['montecarlo']['status'] = 'done'
+                _beast_jobs['montecarlo']['result'] = result
+                _beast_jobs['montecarlo']['finished_at'] = time.time()
+            except Exception as e:
+                _beast_jobs['montecarlo']['status'] = 'error'
+                _beast_jobs['montecarlo']['error'] = str(e)
+
+        t = threading.Thread(target=_run, daemon=True, name='montecarlo')
+        t.start()
+        return jsonify({'success': True, 'message': 'Monte Carlo started'})
+
     return app

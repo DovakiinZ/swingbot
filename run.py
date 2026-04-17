@@ -133,7 +133,8 @@ def _passes_entry_checklist(
 
 def start_dashboard(config: dict, store_inst, state_dict,
                     notifier_inst=None, conservative_inst=None,
-                    weekly_report_inst=None, goal_tracker_inst=None) -> None:
+                    weekly_report_inst=None, goal_tracker_inst=None,
+                    protection_manager_inst=None, edge_tracker_inst=None) -> None:
     """Start Flask dashboard in a background daemon thread."""
     if not config.get('dashboard', {}).get('enabled', True):
         return
@@ -148,6 +149,8 @@ def start_dashboard(config: dict, store_inst, state_dict,
     app.config['conservative_mode'] = conservative_inst
     app.config['weekly_report'] = weekly_report_inst
     app.config['goal_tracker'] = goal_tracker_inst
+    app.config['protection_manager'] = protection_manager_inst
+    app.config['edge_tracker'] = edge_tracker_inst
 
     port = config.get('dashboard', {}).get('port', 8080)
     host = config.get('dashboard', {}).get('host', '0.0.0.0')
@@ -374,10 +377,11 @@ def main():
     # Beast Mode: Advanced protections + per-pair edge tracking
     protection_manager = ProtectionManager(config=CONFIG)
     edge_tracker = EdgeTracker(db_path=CONFIG.get('db_path', 'swingbot.db'))
-    try:
-        edge_tracker.refresh(lookback_days=30)
-    except Exception as e:
-        logger.warning(f"[EDGE] Initial refresh failed: {e}")
+    if CONFIG.get('edge_tracker', {}).get('enabled', True):
+        try:
+            edge_tracker.refresh(lookback_days=CONFIG.get('edge_tracker', {}).get('lookback_days', 30))
+        except Exception as e:
+            logger.warning(f"[EDGE] Initial refresh failed: {e}")
 
     # -- Momentum Strategy -------------------------------------------------
     momentum_strategy = MomentumBreakoutStrategy(
@@ -465,7 +469,9 @@ def main():
                     notifier_inst=notifier,
                     conservative_inst=conservative_mode,
                     weekly_report_inst=weekly_report,
-                    goal_tracker_inst=goal_tracker)
+                    goal_tracker_inst=goal_tracker,
+                    protection_manager_inst=protection_manager,
+                    edge_tracker_inst=edge_tracker)
 
     # --- Startup Banner -------------------------------------------------------
     mode_str = i18n.get("MODE_LIVE") if is_live else i18n.get("MODE_PAPER")
@@ -571,6 +577,11 @@ def main():
             notifier.config = CONFIG
             notifier.notif_config = CONFIG.get('notifications', {})
             conservative_mode.config = CONFIG
+            # Reload beast-mode protection toggles from config
+            try:
+                protection_manager.reload_config(CONFIG)
+            except Exception:
+                pass
         except Exception:
             pass
 

@@ -174,27 +174,36 @@ notifications:
 # -- Beast Mode: Protections ---------------------------------------------------
 # Advanced risk guards — layer multiple safety nets beyond circuit breaker
 protections:
-  # Pause all trading if N stop-losses hit in short window
+  stoploss_guard_enabled: true
   stoploss_guard_lookback_min: 30
   stoploss_guard_trade_limit: 3
   stoploss_guard_pause_hours: 4
-  # Per-symbol cooldown after a loss (prevent re-entry)
+  cooldown_enabled: true
   cooldown_minutes: 60
-  # Pause trading if drawdown over last N trades exceeds threshold
+  max_dd_enabled: true
   max_dd_lookback_trades: 10
   max_dd_pct: 15.0
   max_dd_pause_hours: 6
-  # Disable symbols with negative expectancy
+  low_profit_enabled: true
   low_profit_min_trades: 5
   low_profit_min_wr: 30.0
   low_profit_disable_hours: 24
 
 # -- Beast Mode: Edge Tracking -------------------------------------------------
-# Tracks per-symbol historical edge; sizes up winners, blocks losers
 edge_tracker:
   enabled: true
   lookback_days: 30
   min_trades_for_edge: 5
+
+# -- Beast Mode: Hyperopt ------------------------------------------------------
+hyperopt:
+  default_symbol: "BTC/USDT"
+  default_days: 60
+  default_trials: 50
+
+# -- Beast Mode: Monte Carlo ---------------------------------------------------
+monte_carlo:
+  default_runs: 1000
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:

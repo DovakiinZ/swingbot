@@ -766,6 +766,148 @@ body { padding-bottom: 70px; }
 
 </div>
 
+<!-- Tab 6b: Beast Mode -->
+<div id="tab-beast" class="tab-content">
+  <h3 style="margin-bottom:12px;color:var(--gold)">🔥 Beast Mode</h3>
+  <p style="color:var(--text2);font-size:13px;margin-bottom:14px">Advanced controls: protections, edge tracking, hyperopt, Monte Carlo, multi-metric performance.</p>
+
+  <!-- Card 1: Protections -->
+  <details class="settings-section" open>
+    <summary class="settings-title">🛡 Protections</summary>
+    <div style="padding-top:10px">
+      <div id="beastProtStatus" style="font-size:13px;color:var(--text2);margin-bottom:10px">Loading…</div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+          <span class="field-label" style="margin:0">🚨 Stop Loss Guard</span>
+          <label class="toggle"><input type="checkbox" id="protSlGuard"><span class="slider"></span></label>
+        </label>
+        <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+          <span class="field-label" style="margin:0">⏳ Cooldown After Loss</span>
+          <label class="toggle"><input type="checkbox" id="protCooldown"><span class="slider"></span></label>
+        </label>
+        <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+          <span class="field-label" style="margin:0">📉 Max Drawdown Protection</span>
+          <label class="toggle"><input type="checkbox" id="protMaxDD"><span class="slider"></span></label>
+        </label>
+        <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+          <span class="field-label" style="margin:0">🚫 Auto-Disable Losing Pairs</span>
+          <label class="toggle"><input type="checkbox" id="protLowProfit"><span class="slider"></span></label>
+        </label>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <div class="field-group">
+          <label class="field-label">SL Guard: losses before pause</label>
+          <input type="number" class="field-input" id="protSlLimit" min="1" max="10">
+        </div>
+        <div class="field-group">
+          <label class="field-label">SL Guard: pause hours</label>
+          <input type="number" class="field-input" id="protSlPause" min="1" max="48">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Cooldown (minutes)</label>
+          <input type="number" class="field-input" id="protCooldownMin" min="5" max="720">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Max DD % trigger</label>
+          <input type="number" class="field-input" id="protMaxDDPct" min="5" max="50" step="0.5">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="saveProtections()" style="width:100%;margin-top:12px">💾 Save Protections</button>
+    </div>
+  </details>
+
+  <!-- Card 2: Edge Tracker -->
+  <details class="settings-section" open>
+    <summary class="settings-title">📊 Edge Tracker</summary>
+    <div style="padding-top:10px">
+      <div id="beastEdgeStatus" style="font-size:13px;color:var(--text2);margin-bottom:10px">Loading…</div>
+
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Enable Edge Tracking</span>
+        <label class="toggle"><input type="checkbox" id="edgeEnabled"><span class="slider"></span></label>
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Lookback (days)</label>
+          <input type="number" class="field-input" id="edgeLookback" min="7" max="180">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Min trades for edge</label>
+          <input type="number" class="field-input" id="edgeMinTrades" min="3" max="50">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" onclick="saveEdgeSettings()" style="flex:1">💾 Save</button>
+        <button class="btn btn-secondary" onclick="refreshEdge()" style="flex:1">🔄 Refresh Now</button>
+      </div>
+
+      <div id="beastEdgeReport" style="margin-top:14px"></div>
+    </div>
+  </details>
+
+  <!-- Card 3: Hyperopt -->
+  <details class="settings-section" open>
+    <summary class="settings-title">🧠 Hyperopt (Optuna)</summary>
+    <div style="padding-top:10px">
+      <p style="color:var(--text2);font-size:12px;margin-bottom:10px">Auto-find the best RSI/ATR/EMA params from historical data.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Symbol</label>
+          <input type="text" class="field-input" id="hyperoptSymbol" value="BTC/USDT">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Days</label>
+          <input type="number" class="field-input" id="hyperoptDays" value="60" min="7" max="365">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Trials</label>
+          <input type="number" class="field-input" id="hyperoptTrials" value="50" min="10" max="500">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" onclick="runHyperopt()" style="flex:1" id="btnRunHyperopt">🚀 Run Hyperopt</button>
+        <button class="btn btn-secondary" onclick="applyHyperopt()" style="flex:1" id="btnApplyHyperopt" disabled>✅ Apply Best</button>
+      </div>
+
+      <div id="beastHyperoptResult" style="margin-top:10px"></div>
+    </div>
+  </details>
+
+  <!-- Card 4: Monte Carlo -->
+  <details class="settings-section" open>
+    <summary class="settings-title">🎲 Monte Carlo Validation</summary>
+    <div style="padding-top:10px">
+      <p style="color:var(--text2);font-size:12px;margin-bottom:10px">Shuffles trade order N times. Tells you if your edge is real or lucky.</p>
+
+      <div class="field-group">
+        <label class="field-label">Simulation runs</label>
+        <input type="number" class="field-input" id="mcRuns" value="1000" min="100" max="10000">
+      </div>
+
+      <button class="btn btn-primary" onclick="runMonteCarlo()" style="width:100%" id="btnRunMC">🎯 Run Monte Carlo</button>
+
+      <div id="beastMCResult" style="margin-top:10px"></div>
+    </div>
+  </details>
+
+  <!-- Card 5: Multi-Metric Performance -->
+  <details class="settings-section" open>
+    <summary class="settings-title">📈 Performance Metrics</summary>
+    <div style="padding-top:10px">
+      <p style="color:var(--text2);font-size:12px;margin-bottom:10px">Pro-grade risk-adjusted metrics beyond win rate.</p>
+      <div id="beastMetrics">Loading…</div>
+    </div>
+  </details>
+
+</div>
+
 <!-- Tab 6: Committee -->
 <div id="tab-committee" class="tab-content">
   <h3 style="margin-bottom:12px;color:var(--gold)">🏆 Agent Accuracy</h3>
@@ -848,6 +990,10 @@ body { padding-bottom: 70px; }
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
     <span>AI Chat</span>
   </button>
+  <button class="tab-btn" data-tab="beast">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm-1 6h2v2h-2V8zm0 4h2v6h-2v-6z"/></svg>
+    <span>Beast</span>
+  </button>
   <button class="tab-btn" data-tab="settings">
     <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
     <span>الإعدادات</span>
@@ -876,6 +1022,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'settings') loadSettings();
     if (btn.dataset.tab === 'committee') loadCommittee();
     if (btn.dataset.tab === 'chat') initChat();
+    if (btn.dataset.tab === 'beast') loadBeastMode();
   });
 });
 
@@ -1643,6 +1790,242 @@ async function saveIdentitySettings() {
 }
 
 // ── Committee Tab ─────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// BEAST MODE — unified controls for all 5 advanced systems
+// ══════════════════════════════════════════════════════════════
+
+let _beastPollTimer = null;
+
+async function loadBeastMode() {
+  const d = await api('/api/beast/status');
+  if (!d) return;
+
+  // Protections
+  const p = d.protections || {};
+  const c = d.config?.protections || {};
+  document.getElementById('protSlGuard').checked = c.stoploss_guard_enabled !== false;
+  document.getElementById('protCooldown').checked = c.cooldown_enabled !== false;
+  document.getElementById('protMaxDD').checked = c.max_dd_enabled !== false;
+  document.getElementById('protLowProfit').checked = c.low_profit_enabled !== false;
+  document.getElementById('protSlLimit').value = c.stoploss_guard_trade_limit || 3;
+  document.getElementById('protSlPause').value = c.stoploss_guard_pause_hours || 4;
+  document.getElementById('protCooldownMin').value = c.cooldown_minutes || 60;
+  document.getElementById('protMaxDDPct').value = c.max_dd_pct || 15;
+
+  const sg = p.stoploss_guard || {};
+  const dd = p.max_drawdown || {};
+  const cd = p.cooldown || {};
+  const lp = p.low_profit || {};
+
+  let protSummary = '';
+  if (sg.paused) {
+    protSummary += `<div style="color:var(--red)">🚨 STOP LOSS GUARD ACTIVE — pause ${Math.round(sg.paused_until_sec/60)}min left</div>`;
+  } else {
+    protSummary += `<div>SL Guard: <span style="color:var(--green)">OK</span> — ${sg.recent_stoplosses || 0}/${sg.limit} recent losses</div>`;
+  }
+  if (dd.paused) {
+    protSummary += `<div style="color:var(--red)">🚨 MAX DD PAUSED — ${Math.round(dd.paused_until_sec/60)}min left</div>`;
+  } else {
+    protSummary += `<div>Max DD guard: <span style="color:var(--green)">OK</span> (trigger ${dd.threshold_pct}%)</div>`;
+  }
+  protSummary += `<div>Cooldown: ${cd.active_symbols || 0} symbols on cooldown</div>`;
+  protSummary += `<div>Low-profit: ${lp.disabled_count || 0} symbols disabled</div>`;
+  document.getElementById('beastProtStatus').innerHTML = protSummary;
+
+  // Edge Tracker
+  const e = d.edge_tracker || {};
+  const ec = d.config?.edge_tracker || {};
+  document.getElementById('edgeEnabled').checked = ec.enabled !== false;
+  document.getElementById('edgeLookback').value = ec.lookback_days || 30;
+  document.getElementById('edgeMinTrades').value = ec.min_trades_for_edge || 5;
+
+  let edgeSummary = `<div>Tracking: ${e.tracked_symbols || 0} symbols — ${e.positive_edge_count || 0} with positive edge</div>`;
+  if (e.top_5 && e.top_5.length > 0) {
+    edgeSummary += '<div style="margin-top:8px;font-family:var(--mono);font-size:11px">';
+    edgeSummary += e.top_5.map(s => {
+      const color = s.edge_score > 0.2 ? 'var(--green)' : s.edge_score < -0.2 ? 'var(--red)' : 'var(--gold)';
+      return `<div>${s.symbol}: <span style="color:${color}">${s.edge_score >= 0 ? '+' : ''}${s.edge_score}</span> WR ${s.win_rate}% (${s.trades} trades)</div>`;
+    }).join('');
+    edgeSummary += '</div>';
+  }
+  document.getElementById('beastEdgeStatus').innerHTML = edgeSummary;
+
+  // Edge full report
+  try {
+    const r = await api('/api/beast/edge/report');
+    if (r && r.symbols && r.symbols.length > 0) {
+      let html = '<table style="width:100%;font-size:11px;font-family:var(--mono)"><tr style="color:var(--text2)"><th align="left">Symbol</th><th>Trades</th><th>Win%</th><th>Edge</th><th>Exp</th></tr>';
+      r.symbols.slice(0, 20).forEach(s => {
+        const color = s.edge_score > 0.2 ? 'var(--green)' : s.edge_score < -0.2 ? 'var(--red)' : 'var(--text)';
+        html += `<tr><td>${s.symbol}</td><td align="center">${s.trades}</td><td align="center">${s.win_rate}%</td><td align="center" style="color:${color}">${s.edge_score >= 0 ? '+' : ''}${s.edge_score}</td><td align="right">${s.expectancy >= 0 ? '+' : ''}${s.expectancy}</td></tr>`;
+      });
+      html += '</table>';
+      document.getElementById('beastEdgeReport').innerHTML = html;
+    }
+  } catch (e) {}
+
+  // Hyperopt
+  const h = d.hyperopt;
+  const btnRun = document.getElementById('btnRunHyperopt');
+  const btnApply = document.getElementById('btnApplyHyperopt');
+  const resultDiv = document.getElementById('beastHyperoptResult');
+  if (h) {
+    if (h.status === 'running') {
+      btnRun.disabled = true;
+      btnRun.textContent = '⏳ Running…';
+      resultDiv.innerHTML = `<div style="color:var(--blue)">🔄 Running ${h.trials} trials on ${h.symbol} (${h.days}d)…</div>`;
+    } else if (h.status === 'done' && h.result) {
+      btnRun.disabled = false;
+      btnRun.textContent = '🚀 Run Hyperopt';
+      btnApply.disabled = false;
+      const m = h.result.best_metrics;
+      const p = h.result.best_params;
+      resultDiv.innerHTML = `
+        <div style="background:var(--bg);padding:10px;border-radius:6px;font-size:12px;font-family:var(--mono)">
+          <div style="color:var(--gold)">✅ Best params found:</div>
+          <div>RSI entry: ${p.rsi_entry} · exit: ${p.rsi_exit}</div>
+          <div>ATR SL: ${p.atr_sl_mult}x · TP: ${p.atr_tp_mult}x</div>
+          <div style="margin-top:6px;color:var(--green)">Sharpe: ${m.sharpe} · Return: ${m.total_return}% · Trades: ${m.trades}</div>
+        </div>`;
+    } else if (h.status === 'error') {
+      btnRun.disabled = false;
+      btnRun.textContent = '🚀 Run Hyperopt';
+      resultDiv.innerHTML = `<div style="color:var(--red)">❌ ${h.error || 'Failed'}</div>`;
+    }
+  }
+
+  // Monte Carlo
+  const mc = d.montecarlo;
+  const btnMC = document.getElementById('btnRunMC');
+  const mcDiv = document.getElementById('beastMCResult');
+  if (mc) {
+    if (mc.status === 'running') {
+      btnMC.disabled = true;
+      btnMC.textContent = '⏳ Running…';
+      mcDiv.innerHTML = `<div style="color:var(--blue)">🔄 Running ${mc.runs} simulations…</div>`;
+    } else if (mc.status === 'done' && mc.result) {
+      btnMC.disabled = false;
+      btnMC.textContent = '🎯 Run Monte Carlo';
+      const r = mc.result;
+      if (r.error) {
+        mcDiv.innerHTML = `<div style="color:var(--red)">❌ ${r.error}</div>`;
+      } else {
+        const verdictColor = r.profitable_runs_pct >= 80 ? 'var(--green)' : r.profitable_runs_pct >= 60 ? 'var(--gold)' : 'var(--red)';
+        mcDiv.innerHTML = `
+          <div style="background:var(--bg);padding:10px;border-radius:6px;font-size:12px">
+            <div style="color:${verdictColor};font-weight:700">${r.verdict}</div>
+            <div style="margin-top:6px">Profitable runs: <b>${r.profitable_runs_pct}%</b> of ${r.n_runs}</div>
+            <div>Median final: $${r.balance_stats.median} (from $${r.initial_balance})</div>
+            <div>Worst case (5th %): $${r.balance_stats.p5}</div>
+            <div>Max drawdown (p95): ${r.drawdown_stats.p95_pct}%</div>
+          </div>`;
+      }
+    } else if (mc.status === 'error') {
+      btnMC.disabled = false;
+      btnMC.textContent = '🎯 Run Monte Carlo';
+      mcDiv.innerHTML = `<div style="color:var(--red)">❌ ${mc.error || 'Failed'}</div>`;
+    }
+  }
+
+  // Multi-metric performance
+  const m = d.metrics || {};
+  if (m.total_trades) {
+    const sharpeColor = m.sharpe >= 2 ? 'var(--green)' : m.sharpe >= 1 ? 'var(--gold)' : 'var(--red)';
+    const pfColor = m.profit_factor >= 1.5 ? 'var(--green)' : m.profit_factor >= 1.0 ? 'var(--gold)' : 'var(--red)';
+    document.getElementById('beastMetrics').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Sharpe</div><div style="font-size:20px;color:${sharpeColor}">${m.sharpe}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Sortino</div><div style="font-size:20px">${m.sortino}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Calmar</div><div style="font-size:20px">${m.calmar}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Omega</div><div style="font-size:20px">${m.omega}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Profit Factor</div><div style="font-size:20px;color:${pfColor}">${m.profit_factor}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Expectancy</div><div style="font-size:20px">$${m.expectancy}</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Max DD</div><div style="font-size:20px;color:var(--red)">${m.max_dd_pct}%</div></div>
+        <div class="card" style="padding:10px"><div style="color:var(--text2)">Kelly</div><div style="font-size:20px">${(m.kelly_fraction*100).toFixed(1)}%</div></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text2)">${m.total_trades} trades · Win rate ${m.win_rate}% · Return ${m.total_return_pct}%</div>
+    `;
+  } else {
+    document.getElementById('beastMetrics').innerHTML = '<div style="color:var(--text2);font-size:12px">No trades yet — metrics will appear after your first trade closes.</div>';
+  }
+
+  // Auto-poll every 3s if a job is running
+  if (_beastPollTimer) clearTimeout(_beastPollTimer);
+  const anyRunning = (h && h.status === 'running') || (mc && mc.status === 'running');
+  if (anyRunning) {
+    _beastPollTimer = setTimeout(loadBeastMode, 3000);
+  }
+}
+
+async function saveProtections() {
+  const data = {
+    stoploss_guard_enabled: document.getElementById('protSlGuard').checked,
+    cooldown_enabled: document.getElementById('protCooldown').checked,
+    max_dd_enabled: document.getElementById('protMaxDD').checked,
+    low_profit_enabled: document.getElementById('protLowProfit').checked,
+    stoploss_guard_trade_limit: parseInt(document.getElementById('protSlLimit').value),
+    stoploss_guard_pause_hours: parseInt(document.getElementById('protSlPause').value),
+    cooldown_minutes: parseInt(document.getElementById('protCooldownMin').value),
+    max_dd_pct: parseFloat(document.getElementById('protMaxDDPct').value),
+  };
+  const r = await api('/api/beast/protections/toggle', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data),
+  });
+  if (r?.success) toast('✅ Protections saved');
+  loadBeastMode();
+}
+
+async function saveEdgeSettings() {
+  const data = {
+    enabled: document.getElementById('edgeEnabled').checked,
+    lookback_days: parseInt(document.getElementById('edgeLookback').value),
+    min_trades_for_edge: parseInt(document.getElementById('edgeMinTrades').value),
+  };
+  const r = await api('/api/beast/edge/toggle', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data),
+  });
+  if (r?.success) toast('✅ Edge tracker saved');
+  loadBeastMode();
+}
+
+async function refreshEdge() {
+  const r = await api('/api/beast/edge/refresh', {method: 'POST'});
+  if (r?.success) toast(`✅ ${r.message || 'Refreshed'}`);
+  else toast('❌ ' + (r?.error || 'Failed'));
+  loadBeastMode();
+}
+
+async function runHyperopt() {
+  const data = {
+    symbol: document.getElementById('hyperoptSymbol').value,
+    days: parseInt(document.getElementById('hyperoptDays').value),
+    trials: parseInt(document.getElementById('hyperoptTrials').value),
+  };
+  const r = await api('/api/beast/hyperopt/run', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data),
+  });
+  if (r?.success) toast('🚀 Hyperopt started — this will take a few minutes');
+  else toast('❌ ' + (r?.error || 'Failed to start'));
+  setTimeout(loadBeastMode, 500);
+}
+
+async function applyHyperopt() {
+  const r = await api('/api/beast/hyperopt/apply', {method: 'POST'});
+  if (r?.success) toast('✅ Best params applied to config');
+  else toast('❌ ' + (r?.error || 'Failed'));
+  loadBeastMode();
+}
+
+async function runMonteCarlo() {
+  const data = {runs: parseInt(document.getElementById('mcRuns').value)};
+  const r = await api('/api/beast/montecarlo/run', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data),
+  });
+  if (r?.success) toast('🎯 Monte Carlo running…');
+  else toast('❌ ' + (r?.error || 'Failed to start'));
+  setTimeout(loadBeastMode, 500);
+}
+
 async function loadCommittee() {
   const d = await api('/api/committee/history');
   if (!d) return;

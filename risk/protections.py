@@ -215,8 +215,16 @@ class ProtectionManager:
     """
 
     def __init__(self, config: dict = None):
-        config = config or {}
-        prot_cfg = config.get('protections', {})
+        self.config = config or {}
+        self._init_from_config()
+
+    def _init_from_config(self):
+        prot_cfg = self.config.get('protections', {})
+
+        self.enabled_stoploss_guard = prot_cfg.get('stoploss_guard_enabled', True)
+        self.enabled_cooldown = prot_cfg.get('cooldown_enabled', True)
+        self.enabled_max_dd = prot_cfg.get('max_dd_enabled', True)
+        self.enabled_low_profit = prot_cfg.get('low_profit_enabled', True)
 
         self.stoploss_guard = StoplossGuard(
             lookback_minutes=prot_cfg.get('stoploss_guard_lookback_min', 30),
@@ -237,21 +245,74 @@ class ProtectionManager:
             disable_hours=prot_cfg.get('low_profit_disable_hours', 24),
         )
 
+    def reload_config(self, config: dict):
+        """Reload settings without losing historical state."""
+        self.config = config or {}
+        prot_cfg = self.config.get('protections', {})
+        self.enabled_stoploss_guard = prot_cfg.get('stoploss_guard_enabled', True)
+        self.enabled_cooldown = prot_cfg.get('cooldown_enabled', True)
+        self.enabled_max_dd = prot_cfg.get('max_dd_enabled', True)
+        self.enabled_low_profit = prot_cfg.get('low_profit_enabled', True)
+
     def check_global(self) -> ProtectionStatus:
         """Call before entering any new trade. Checks all global protections."""
-        for p in (self.stoploss_guard, self.max_drawdown):
-            status = p.check()
+        if self.enabled_stoploss_guard:
+            status = self.stoploss_guard.check()
+            if status.blocked:
+                return status
+        if self.enabled_max_dd:
+            status = self.max_drawdown.check()
             if status.blocked:
                 return status
         return ProtectionStatus(blocked=False)
 
     def check_symbol(self, symbol: str) -> ProtectionStatus:
         """Call before entering this specific symbol."""
-        for p in (self.cooldown, self.low_profit):
-            status = p.check(symbol)
+        if self.enabled_cooldown:
+            status = self.cooldown.check(symbol)
+            if status.blocked:
+                return status
+        if self.enabled_low_profit:
+            status = self.low_profit.check(symbol)
             if status.blocked:
                 return status
         return ProtectionStatus(blocked=False)
+
+    def get_status(self) -> dict:
+        """Return current status of all protections for dashboard display."""
+        import time
+        now = time.time()
+
+        sl_status = self.stoploss_guard.check()
+        dd_status = self.max_drawdown.check()
+
+        return {
+            'stoploss_guard': {
+                'enabled': self.enabled_stoploss_guard,
+                'paused': sl_status.blocked,
+                'paused_until_sec': max(0, int(self.stoploss_guard._paused_until - now)) if self.stoploss_guard._paused_until > now else 0,
+                'recent_stoplosses': len([t for t in self.stoploss_guard._stoploss_times
+                                           if t >= now - self.stoploss_guard.lookback_sec]),
+                'limit': self.stoploss_guard.trade_limit,
+            },
+            'cooldown': {
+                'enabled': self.enabled_cooldown,
+                'active_symbols': len([s for s, t in self.cooldown._cooldowns.items() if t > now]),
+                'cooldown_min': self.cooldown.cooldown_sec // 60,
+            },
+            'max_drawdown': {
+                'enabled': self.enabled_max_dd,
+                'paused': dd_status.blocked,
+                'paused_until_sec': max(0, int(self.max_drawdown._paused_until - now)) if self.max_drawdown._paused_until > now else 0,
+                'recent_balances': len(self.max_drawdown._recent_balances),
+                'threshold_pct': self.max_drawdown.max_dd * 100,
+            },
+            'low_profit': {
+                'enabled': self.enabled_low_profit,
+                'disabled_count': len([s for s, t in self.low_profit._disabled.items() if t > now]),
+                'tracked_symbols': len(self.low_profit._trade_history),
+            },
+        }
 
     def on_trade_closed(self, symbol: str, pnl: float, pnl_pct: float,
                          exit_reason: str, new_balance: float) -> None:
