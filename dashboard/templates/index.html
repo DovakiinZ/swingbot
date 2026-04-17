@@ -764,6 +764,285 @@ body { padding-bottom: 70px; }
     </div>
   </details>
 
+  <!-- GROUP 10: Advanced Filters -->
+  <details class="settings-section">
+    <summary class="settings-title">🔍 Advanced Filters</summary>
+    <div style="padding-top:8px">
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Multi-Timeframe (4H) Filter</span>
+        <label class="toggle"><input type="checkbox" id="setMtfEnabled"><span class="slider"></span></label>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">HTF timeframe</label>
+          <input type="text" class="field-input" id="setHtfTimeframe" placeholder="4h">
+        </div>
+        <div class="field-group">
+          <label class="field-label">HTF EMA period</label>
+          <input type="number" class="field-input" id="setHtfEmaPeriod" min="20" max="500">
+        </div>
+      </div>
+
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Funding Rate Filter (perps only)</span>
+        <label class="toggle"><input type="checkbox" id="setFundingEnabled"><span class="slider"></span></label>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Long block threshold</label>
+          <input type="number" class="field-input" id="setFundingLong" step="0.0001">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Short block threshold</label>
+          <input type="number" class="field-input" id="setFundingShort" step="0.0001">
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Volume multiplier (min vs avg)</label>
+        <input type="number" class="field-input" id="setVolMult" step="0.1" min="0.5" max="5">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Signal score threshold</label>
+        <input type="number" class="field-input" id="setSignalScoreThreshold" min="0" max="100">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Regime ADX threshold</label>
+        <input type="number" class="field-input" id="setRegimeAdx" min="5" max="50">
+      </div>
+      <button class="btn btn-primary" onclick="saveAdvancedFilters()" style="width:100%;margin-top:8px">Save Filters</button>
+    </div>
+  </details>
+
+  <!-- GROUP 11: Dynamic Scanner -->
+  <details class="settings-section">
+    <summary class="settings-title">🌐 Dynamic Scanner (multi-exchange)</summary>
+    <div style="padding-top:8px">
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Fetch symbols from Binance + Bybit + MEXC</span>
+        <label class="toggle"><input type="checkbox" id="setDynSymbols"><span class="slider"></span></label>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Max symbols to track</label>
+          <input type="number" class="field-input" id="setMaxSymbols" min="5" max="200">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Min 24h volume (USDT)</label>
+          <input type="number" class="field-input" id="setMin24hVol" step="100000" min="100000">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveDynScanner()" style="width:100%;margin-top:8px">Save Scanner</button>
+    </div>
+  </details>
+
+  <!-- GROUP 12: Sentiment Sources -->
+  <details class="settings-section">
+    <summary class="settings-title">📰 Sentiment Sources (4 APIs)</summary>
+    <div style="padding-top:8px">
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Fear & Greed Index</span>
+        <label class="toggle"><input type="checkbox" id="setFearGreed"><span class="slider"></span></label>
+      </label>
+      <div class="field-group">
+        <label class="field-label">CryptoPanic API Token</label>
+        <input type="password" class="field-input" id="setCryptoPanicToken" placeholder="from cryptopanic.com/developers/api">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Santiment API Token</label>
+        <input type="password" class="field-input" id="setSantimentToken" placeholder="from app.santiment.net">
+      </div>
+      <div class="field-group">
+        <label class="field-label">LunarCrush API Token</label>
+        <input type="password" class="field-input" id="setLunarCrushToken" placeholder="from lunarcrush.com">
+      </div>
+      <button class="btn btn-primary" onclick="saveSentimentSources()" style="width:100%;margin-top:8px">Save Sentiment</button>
+    </div>
+  </details>
+
+  <!-- GROUP 13: Committee Voting -->
+  <details class="settings-section">
+    <summary class="settings-title">🗳 Committee (5-agent voting)</summary>
+    <div style="padding-top:8px">
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Enable Committee voting gate</span>
+        <label class="toggle"><input type="checkbox" id="setCommitteeEnabled"><span class="slider"></span></label>
+      </label>
+      <p style="font-size:11px;color:var(--text2);margin:4px 0 8px">Weights must sum to ~1.0. Each agent votes BUY/SELL/HOLD with confidence.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Trend agent</label>
+          <input type="number" class="field-input" id="setTrendWeight" step="0.05" min="0" max="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Momentum agent</label>
+          <input type="number" class="field-input" id="setMomWeight" step="0.05" min="0" max="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Sentiment agent</label>
+          <input type="number" class="field-input" id="setSentWeight" step="0.05" min="0" max="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Risk agent</label>
+          <input type="number" class="field-input" id="setRiskWeight" step="0.05" min="0" max="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Pattern agent</label>
+          <input type="number" class="field-input" id="setPatWeight" step="0.05" min="0" max="1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Sum (target ~1.0)</label>
+          <input type="text" class="field-input" id="setWeightSum" readonly style="color:var(--gold)">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveCommittee()" style="width:100%;margin-top:8px">Save Committee</button>
+    </div>
+  </details>
+
+  <!-- GROUP 14: ATR & Trailing Stops -->
+  <details class="settings-section">
+    <summary class="settings-title">🎯 ATR Stops & Trailing</summary>
+    <div style="padding-top:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">SL ATR multiplier</label>
+          <input type="number" class="field-input" id="setAtrSlMult" step="0.1" min="0.5" max="5">
+        </div>
+        <div class="field-group">
+          <label class="field-label">TP ATR multiplier</label>
+          <input type="number" class="field-input" id="setAtrTpMult" step="0.1" min="1" max="10">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Trailing activate %</label>
+          <input type="number" class="field-input" id="setTrailActivate" step="0.001" min="0.001" max="0.1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Trailing trail %</label>
+          <input type="number" class="field-input" id="setTrailTrail" step="0.001" min="0.001" max="0.1">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveAtrTrailing()" style="width:100%;margin-top:8px">Save ATR / Trailing</button>
+    </div>
+  </details>
+
+  <!-- GROUP 15: Momentum Breakout (WebSocket) -->
+  <details class="settings-section">
+    <summary class="settings-title">⚡ Momentum Breakout</summary>
+    <div style="padding-top:8px">
+      <p style="font-size:11px;color:var(--text2);margin-bottom:8px">Real-time WebSocket-triggered entries on sudden moves.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Min price change (0.003 = 0.3%)</label>
+          <input type="number" class="field-input" id="setMomChange" step="0.001" min="0.001" max="0.05">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Min volume multiplier</label>
+          <input type="number" class="field-input" id="setMomVolMult" step="0.1" min="1" max="10">
+        </div>
+        <div class="field-group">
+          <label class="field-label">SL ATR mult</label>
+          <input type="number" class="field-input" id="setMomSl" step="0.1" min="0.5" max="5">
+        </div>
+        <div class="field-group">
+          <label class="field-label">TP ATR mult</label>
+          <input type="number" class="field-input" id="setMomTp" step="0.1" min="1" max="10">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Cooldown (seconds)</label>
+          <input type="number" class="field-input" id="setMomCooldown" min="30" max="3600">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveMomentum()" style="width:100%;margin-top:8px">Save Momentum</button>
+    </div>
+  </details>
+
+  <!-- GROUP 16: Extended Risk Limits -->
+  <details class="settings-section">
+    <summary class="settings-title">⚠ Extended Risk Limits</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Hard daily loss (USD)</label>
+        <input type="number" class="field-input" id="setMaxDailyLossUsd" step="1" min="1" max="10000">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max risk per trade (% cap)</label>
+        <input type="number" class="field-input" id="setMaxRiskPct" step="0.1" min="0.1" max="20">
+      </div>
+      <div class="field-group">
+        <label class="field-label">API failure limit</label>
+        <input type="number" class="field-input" id="setApiFailLimit" min="1" max="50">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Drawdown reset threshold</label>
+        <input type="number" class="field-input" id="setDdResetThresh" step="0.05" min="0.05" max="0.9">
+      </div>
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Kelly Criterion sizing</span>
+        <label class="toggle"><input type="checkbox" id="setKellyEnabled"><span class="slider"></span></label>
+      </label>
+      <div class="field-group">
+        <label class="field-label">Kelly fraction (0.25 = quarter-Kelly)</label>
+        <input type="number" class="field-input" id="setKellyFrac" step="0.05" min="0.05" max="1">
+      </div>
+      <button class="btn btn-primary" onclick="saveExtendedRisk()" style="width:100%;margin-top:8px">Save Risk Limits</button>
+    </div>
+  </details>
+
+  <!-- GROUP 17: Trailing Entry -->
+  <details class="settings-section">
+    <summary class="settings-title">🎣 Trailing Entry (pullback wait)</summary>
+    <div style="padding-top:8px">
+      <label class="field-group" style="display:flex;justify-content:space-between;align-items:center">
+        <span class="field-label" style="margin:0">Wait for pullback before entering</span>
+        <label class="toggle"><input type="checkbox" id="setTrailEntryEnabled"><span class="slider"></span></label>
+      </label>
+      <div class="field-group">
+        <label class="field-label">Pullback % required</label>
+        <input type="number" class="field-input" id="setTrailPullback" step="0.001" min="0.001" max="0.05">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Expiry (seconds)</label>
+        <input type="number" class="field-input" id="setTrailExpiry" step="300" min="60" max="14400">
+      </div>
+      <button class="btn btn-primary" onclick="saveTrailingEntry()" style="width:100%;margin-top:8px">Save Trailing Entry</button>
+    </div>
+  </details>
+
+  <!-- GROUP 18: Extra Protection Thresholds -->
+  <details class="settings-section">
+    <summary class="settings-title">🛡 Extra Protection Thresholds</summary>
+    <div style="padding-top:8px">
+      <p style="font-size:11px;color:var(--text2);margin-bottom:8px">Fine-tune beast-mode protection windows.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">SL Guard lookback (min)</label>
+          <input type="number" class="field-input" id="setSlLookback" min="5" max="240">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Max DD lookback trades</label>
+          <input type="number" class="field-input" id="setMaxDdLookback" min="3" max="100">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Max DD pause hours</label>
+          <input type="number" class="field-input" id="setMaxDdPause" min="1" max="48">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Low profit min trades</label>
+          <input type="number" class="field-input" id="setLowProfTrades" min="3" max="50">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Low profit min WR %</label>
+          <input type="number" class="field-input" id="setLowProfWr" step="1" min="10" max="70">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Low profit disable hours</label>
+          <input type="number" class="field-input" id="setLowProfHours" min="1" max="168">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveExtraProtections()" style="width:100%;margin-top:8px">Save Thresholds</button>
+    </div>
+  </details>
+
 </div>
 
 <!-- Tab 6b: Beast Mode -->
@@ -1554,6 +1833,85 @@ async function loadSettings() {
   document.getElementById('setPaperBalance').value = c.paper_start_balance_usdt || 1000;
   document.getElementById('setBaseBalance').value = c.base_balance || 100;
   document.getElementById('setLang').value = c.lang || 'en';
+
+  // GROUP 10: Advanced Filters
+  document.getElementById('setMtfEnabled').checked = c.mtf_filter_enabled === true;
+  document.getElementById('setHtfTimeframe').value = c.htf_timeframe || '4h';
+  document.getElementById('setHtfEmaPeriod').value = c.htf_ema_period || 200;
+  document.getElementById('setFundingEnabled').checked = c.funding_rate_filter === true;
+  document.getElementById('setFundingLong').value = c.funding_long_block ?? 0.0008;
+  document.getElementById('setFundingShort').value = c.funding_short_block ?? -0.0005;
+  document.getElementById('setVolMult').value = c.volume_multiplier ?? 1.0;
+  document.getElementById('setSignalScoreThreshold').value = c.signal_score_threshold ?? 35;
+  document.getElementById('setRegimeAdx').value = c.regime_adx_threshold ?? 15;
+
+  // GROUP 11: Dynamic Scanner
+  document.getElementById('setDynSymbols').checked = c.dynamic_symbols !== false;
+  document.getElementById('setMaxSymbols').value = c.max_symbols || 50;
+  document.getElementById('setMin24hVol').value = c.min_24h_volume_usdt || 1000000;
+
+  // GROUP 12: Sentiment Sources
+  document.getElementById('setFearGreed').checked = c.fear_greed_enabled !== false;
+  document.getElementById('setCryptoPanicToken').value = c.cryptopanic_token || '';
+  document.getElementById('setSantimentToken').value = c.santiment_token || '';
+  document.getElementById('setLunarCrushToken').value = c.lunarcrush_token || '';
+
+  // GROUP 13: Committee
+  document.getElementById('setCommitteeEnabled').checked = c.committee_enabled === true;
+  document.getElementById('setTrendWeight').value = c.trend_agent_weight ?? 0.25;
+  document.getElementById('setMomWeight').value = c.momentum_agent_weight ?? 0.20;
+  document.getElementById('setSentWeight').value = c.sentiment_agent_weight ?? 0.25;
+  document.getElementById('setRiskWeight').value = c.risk_agent_weight ?? 0.20;
+  document.getElementById('setPatWeight').value = c.pattern_agent_weight ?? 0.10;
+  updateWeightSum();
+
+  // GROUP 14: ATR & Trailing Stops
+  document.getElementById('setAtrSlMult').value = c.atr_multiplier_sl ?? 1.5;
+  document.getElementById('setAtrTpMult').value = c.atr_multiplier_tp ?? 3.0;
+  document.getElementById('setTrailActivate').value = c.trailing_stop_activate_pct ?? 0.01;
+  document.getElementById('setTrailTrail').value = c.trailing_stop_trail_pct ?? 0.008;
+
+  // GROUP 15: Momentum Breakout
+  document.getElementById('setMomChange').value = c.momentum_min_change ?? 0.003;
+  document.getElementById('setMomVolMult').value = c.momentum_min_volume ?? 2.0;
+  document.getElementById('setMomSl').value = c.momentum_sl_mult ?? 2.0;
+  document.getElementById('setMomTp').value = c.momentum_tp_mult ?? 4.0;
+  document.getElementById('setMomCooldown').value = c.momentum_cooldown_sec ?? 300;
+
+  // GROUP 16: Extended Risk Limits
+  document.getElementById('setMaxDailyLossUsd').value = c.max_daily_loss_usd ?? 15;
+  document.getElementById('setMaxRiskPct').value = c.max_risk_per_trade_pct ?? 2.0;
+  document.getElementById('setApiFailLimit').value = c.api_failure_limit ?? 5;
+  document.getElementById('setDdResetThresh').value = c.drawdown_reset_threshold ?? 0.20;
+  const kellyCfg = c.kelly_sizing || {};
+  document.getElementById('setKellyEnabled').checked = kellyCfg.enabled === true;
+  document.getElementById('setKellyFrac').value = kellyCfg.fraction ?? 0.25;
+
+  // GROUP 17: Trailing Entry
+  const trailEntry = c.trailing_entry || {};
+  document.getElementById('setTrailEntryEnabled').checked = trailEntry.enabled === true;
+  document.getElementById('setTrailPullback').value = trailEntry.pullback_pct ?? 0.003;
+  document.getElementById('setTrailExpiry').value = trailEntry.expiry_seconds ?? 3600;
+
+  // GROUP 18: Extra Protection Thresholds
+  const prot = c.protections || {};
+  document.getElementById('setSlLookback').value = prot.stoploss_guard_lookback_min ?? 30;
+  document.getElementById('setMaxDdLookback').value = prot.max_dd_lookback_trades ?? 10;
+  document.getElementById('setMaxDdPause').value = prot.max_dd_pause_hours ?? 6;
+  document.getElementById('setLowProfTrades').value = prot.low_profit_min_trades ?? 5;
+  document.getElementById('setLowProfWr').value = prot.low_profit_min_wr ?? 30;
+  document.getElementById('setLowProfHours').value = prot.low_profit_disable_hours ?? 24;
+}
+
+function updateWeightSum() {
+  const w = ['setTrendWeight','setMomWeight','setSentWeight','setRiskWeight','setPatWeight']
+    .map(id => parseFloat(document.getElementById(id).value) || 0);
+  const s = w.reduce((a,b) => a+b, 0);
+  const el = document.getElementById('setWeightSum');
+  if (el) {
+    el.value = s.toFixed(2);
+    el.style.color = Math.abs(s - 1.0) < 0.05 ? 'var(--green)' : 'var(--red)';
+  }
 }
 
 // ── Trading Hours Grid ─────────────────────────────────────────────
@@ -1788,6 +2146,107 @@ async function saveIdentitySettings() {
     lang: document.getElementById('setLang').value,
   });
 }
+
+// ── Extended save handlers for Groups 10-18 ────────────────────────
+
+async function saveAdvancedFilters() {
+  await saveSettings({
+    mtf_filter_enabled: document.getElementById('setMtfEnabled').checked,
+    htf_timeframe: document.getElementById('setHtfTimeframe').value,
+    htf_ema_period: parseInt(document.getElementById('setHtfEmaPeriod').value),
+    funding_rate_filter: document.getElementById('setFundingEnabled').checked,
+    funding_long_block: parseFloat(document.getElementById('setFundingLong').value),
+    funding_short_block: parseFloat(document.getElementById('setFundingShort').value),
+    volume_multiplier: parseFloat(document.getElementById('setVolMult').value),
+    signal_score_threshold: parseInt(document.getElementById('setSignalScoreThreshold').value),
+    regime_adx_threshold: parseInt(document.getElementById('setRegimeAdx').value),
+  });
+}
+
+async function saveDynScanner() {
+  await saveSettings({
+    dynamic_symbols: document.getElementById('setDynSymbols').checked,
+    max_symbols: parseInt(document.getElementById('setMaxSymbols').value),
+    min_24h_volume_usdt: parseFloat(document.getElementById('setMin24hVol').value),
+  });
+}
+
+async function saveSentimentSources() {
+  await saveSettings({
+    fear_greed_enabled: document.getElementById('setFearGreed').checked,
+    cryptopanic_token: document.getElementById('setCryptoPanicToken').value,
+    santiment_token: document.getElementById('setSantimentToken').value,
+    lunarcrush_token: document.getElementById('setLunarCrushToken').value,
+  });
+}
+
+async function saveCommittee() {
+  updateWeightSum();
+  await saveSettings({
+    committee_enabled: document.getElementById('setCommitteeEnabled').checked,
+    trend_agent_weight: parseFloat(document.getElementById('setTrendWeight').value),
+    momentum_agent_weight: parseFloat(document.getElementById('setMomWeight').value),
+    sentiment_agent_weight: parseFloat(document.getElementById('setSentWeight').value),
+    risk_agent_weight: parseFloat(document.getElementById('setRiskWeight').value),
+    pattern_agent_weight: parseFloat(document.getElementById('setPatWeight').value),
+  });
+}
+
+async function saveAtrTrailing() {
+  await saveSettings({
+    atr_multiplier_sl: parseFloat(document.getElementById('setAtrSlMult').value),
+    atr_multiplier_tp: parseFloat(document.getElementById('setAtrTpMult').value),
+    trailing_stop_activate_pct: parseFloat(document.getElementById('setTrailActivate').value),
+    trailing_stop_trail_pct: parseFloat(document.getElementById('setTrailTrail').value),
+  });
+}
+
+async function saveMomentum() {
+  await saveSettings({
+    momentum_min_change: parseFloat(document.getElementById('setMomChange').value),
+    momentum_min_volume: parseFloat(document.getElementById('setMomVolMult').value),
+    momentum_sl_mult: parseFloat(document.getElementById('setMomSl').value),
+    momentum_tp_mult: parseFloat(document.getElementById('setMomTp').value),
+    momentum_cooldown_sec: parseInt(document.getElementById('setMomCooldown').value),
+  });
+}
+
+async function saveExtendedRisk() {
+  await saveSettings({
+    max_daily_loss_usd: parseFloat(document.getElementById('setMaxDailyLossUsd').value),
+    max_risk_per_trade_pct: parseFloat(document.getElementById('setMaxRiskPct').value),
+    api_failure_limit: parseInt(document.getElementById('setApiFailLimit').value),
+    drawdown_reset_threshold: parseFloat(document.getElementById('setDdResetThresh').value),
+    'kelly_sizing.enabled': document.getElementById('setKellyEnabled').checked,
+    'kelly_sizing.fraction': parseFloat(document.getElementById('setKellyFrac').value),
+  });
+}
+
+async function saveTrailingEntry() {
+  await saveSettings({
+    'trailing_entry.enabled': document.getElementById('setTrailEntryEnabled').checked,
+    'trailing_entry.pullback_pct': parseFloat(document.getElementById('setTrailPullback').value),
+    'trailing_entry.expiry_seconds': parseInt(document.getElementById('setTrailExpiry').value),
+  });
+}
+
+async function saveExtraProtections() {
+  await saveSettings({
+    'protections.stoploss_guard_lookback_min': parseInt(document.getElementById('setSlLookback').value),
+    'protections.max_dd_lookback_trades': parseInt(document.getElementById('setMaxDdLookback').value),
+    'protections.max_dd_pause_hours': parseInt(document.getElementById('setMaxDdPause').value),
+    'protections.low_profit_min_trades': parseInt(document.getElementById('setLowProfTrades').value),
+    'protections.low_profit_min_wr': parseFloat(document.getElementById('setLowProfWr').value),
+    'protections.low_profit_disable_hours': parseInt(document.getElementById('setLowProfHours').value),
+  });
+}
+
+// Live-update weight sum as user types
+['setTrendWeight','setMomWeight','setSentWeight','setRiskWeight','setPatWeight'].forEach(id => {
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === id) updateWeightSum();
+  });
+});
 
 // ── Committee Tab ─────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
