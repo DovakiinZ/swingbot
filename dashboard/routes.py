@@ -16,7 +16,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 try:
-    from flask import Flask, jsonify, render_template, request, session, redirect, render_template_string
+    from flask import Flask, jsonify, render_template, request, session, redirect, render_template_string, make_response
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
@@ -175,7 +175,12 @@ def create_app(store=None, state=None, config: dict = None):
     @app.route("/")
     @login_required
     def index():
-        return render_template("index.html")
+        resp = make_response(render_template("index.html"))
+        # Prevent browser caching — ensures UI updates ship instantly after deploy
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        resp.headers['Pragma'] = 'no-cache'
+        resp.headers['Expires'] = '0'
+        return resp
 
     # ── Bot Data APIs ──────────────────────────────────────────────────
 
