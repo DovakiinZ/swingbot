@@ -4,11 +4,12 @@ start.py — Swingbot Auto-Setup & Launcher
 One command to install everything and start the bot.
 
 Usage:
-    python start.py              # Setup + start bot
+    python start.py              # Auto-update + setup + start bot
     python start.py --check      # Check only, don't start
     python start.py --reset      # Reset database (with backup) + start
     python start.py --paper      # Force paper mode + start
     python start.py --fast       # Start with 2-minute scan interval
+    python start.py --no-update  # Skip git pull (use local code as-is)
 """
 
 import sys
@@ -187,6 +188,108 @@ BANNER = r"""
   ███████║╚███╔███╔╝██║██║ ╚████║╚██████╔╝██████╔╝╚██████╔╝   ██║
   ╚══════╝ ╚══╝╚══╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝  ╚═════╝   ╚═╝
 """
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# AUTO-UPDATE FROM GITHUB
+# ═══════════════════════════════════════════════════════════════════════
+
+def auto_update() -> bool:
+    """
+    Pull latest code from GitHub before starting.
+
+    Returns True if an update was applied (caller should re-exec to load
+    the new code). False means either no update was needed, not a git repo,
+    git not installed, or the pull failed — in all cases it's safe to continue.
+
+    Safety:
+      - Uses --ff-only so we NEVER merge over local commits/uncommitted work
+      - Skips silently if .git is missing (user downloaded ZIP)
+      - Never crashes the launcher on network errors
+    """
+    header("0. Checking for updates from GitHub...")
+
+    # Not a git repo → user downloaded ZIP, skip silently
+    if not (ROOT / ".git").exists():
+        info("Not a git repository — skipping auto-update")
+        return False
+
+    # Git binary available?
+    try:
+        subprocess.run(
+            ["git", "--version"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+    except Exception:
+        warn("git not installed — skipping auto-update")
+        return False
+
+    # Fetch latest from remote
+    try:
+        result = subprocess.run(
+            ["git", "fetch", "--quiet"],
+            capture_output=True, text=True, timeout=30, cwd=str(ROOT),
+        )
+        if result.returncode != 0:
+            warn(f"git fetch failed (offline?): {result.stderr.strip()[:150]}")
+            return False
+    except subprocess.TimeoutExpired:
+        warn("git fetch timed out — continuing with local code")
+        return False
+    except Exception as e:
+        warn(f"git fetch error: {e} — continuing with local code")
+        return False
+
+    # Compare local HEAD with upstream
+    try:
+        local = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=str(ROOT), check=True,
+        ).stdout.strip()
+        upstream = subprocess.run(
+            ["git", "rev-parse", "@{u}"],
+            capture_output=True, text=True, cwd=str(ROOT), check=True,
+        ).stdout.strip()
+        if local == upstream:
+            ok("Already up to date with GitHub")
+            return False
+    except Exception as e:
+        info(f"Could not compare revisions: {e}")
+        return False
+
+    # Check for uncommitted changes that would block a fast-forward
+    try:
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, cwd=str(ROOT), check=True,
+        ).stdout.strip()
+        if dirty:
+            warn("Local uncommitted changes detected — skipping auto-update")
+            info("Commit or stash your changes to receive updates")
+            return False
+    except Exception:
+        pass
+
+    # Pull using fast-forward only (never merges)
+    info("New updates available — pulling from GitHub...")
+    try:
+        result = subprocess.run(
+            ["git", "pull", "--ff-only", "--quiet"],
+            capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+        )
+        if result.returncode == 0:
+            ok("Updated to latest version from GitHub")
+            return True
+        else:
+            warn(f"git pull failed: {result.stderr.strip()[:200]}")
+            info("Continuing with current local version")
+            return False
+    except subprocess.TimeoutExpired:
+        warn("git pull timed out — continuing with local code")
+        return False
+    except Exception as e:
+        warn(f"git pull error: {e} — continuing with local code")
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -409,10 +512,26 @@ def reset_database():
 def main():
     check_only = "--check" in sys.argv
     do_reset = "--reset" in sys.argv
+    skip_update = "--no-update" in sys.argv
 
     print(f"\n{'=' * 50}")
     print(f"  {BOLD}SWINGBOT — Auto Setup & Launcher{RESET}")
     print(f"{'=' * 50}")
+
+    # Step 0: Auto-update from GitHub (unless --no-update)
+    if not skip_update:
+        try:
+            updated = auto_update()
+            if updated:
+                # New code pulled — re-exec this script so the updated
+                # logic takes effect (we're running the old version).
+                info("Restarting launcher with updated code...")
+                args = [sys.executable, str(Path(__file__).resolve())] + sys.argv[1:]
+                if "--no-update" not in args:
+                    args.append("--no-update")  # avoid infinite update loop
+                os.execv(sys.executable, args)
+        except Exception as e:
+            warn(f"Auto-update skipped: {e}")
 
     # Step 1: Python version (hard stop if too old)
     if not check_python():
