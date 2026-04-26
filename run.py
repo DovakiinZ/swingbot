@@ -134,7 +134,8 @@ def _passes_entry_checklist(
 def start_dashboard(config: dict, store_inst, state_dict,
                     notifier_inst=None, conservative_inst=None,
                     weekly_report_inst=None, goal_tracker_inst=None,
-                    protection_manager_inst=None, edge_tracker_inst=None) -> None:
+                    protection_manager_inst=None, edge_tracker_inst=None,
+                    broker_inst=None, market_inst=None) -> None:
     """Start Flask dashboard in a background daemon thread."""
     if not config.get('dashboard', {}).get('enabled', True):
         return
@@ -151,6 +152,8 @@ def start_dashboard(config: dict, store_inst, state_dict,
     app.config['goal_tracker'] = goal_tracker_inst
     app.config['protection_manager'] = protection_manager_inst
     app.config['edge_tracker'] = edge_tracker_inst
+    app.config['broker'] = broker_inst
+    app.config['market'] = market_inst
 
     port = config.get('dashboard', {}).get('port', 8080)
     host = config.get('dashboard', {}).get('host', '0.0.0.0')
@@ -471,7 +474,9 @@ def main():
                     weekly_report_inst=weekly_report,
                     goal_tracker_inst=goal_tracker,
                     protection_manager_inst=protection_manager,
-                    edge_tracker_inst=edge_tracker)
+                    edge_tracker_inst=edge_tracker,
+                    broker_inst=broker,
+                    market_inst=market)
 
     # --- Startup Banner -------------------------------------------------------
     mode_str = i18n.get("MODE_LIVE") if is_live else i18n.get("MODE_PAPER")

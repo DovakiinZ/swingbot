@@ -348,6 +348,40 @@ body { padding-bottom: 70px; }
 <!-- Tab 2: Trades -->
 <div id="tab-trades" class="tab-content">
   <div id="positionsList"></div>
+
+  <!-- Manual Buy/Sell Card -->
+  <details class="settings-section" style="margin-top:16px">
+    <summary class="settings-title">🛒 Manual Buy / Sell</summary>
+    <div style="padding-top:8px">
+      <div class="field-group">
+        <label class="field-label">Symbol (e.g. BTC/USDT)</label>
+        <input type="text" class="field-input" id="manualSymbol" placeholder="BTC/USDT" value="BTC/USDT">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Side</label>
+        <select class="field-input" id="manualSide" style="appearance:auto;padding:12px 16px">
+          <option value="BUY">▲ BUY (Long)</option>
+          <option value="SELL">▼ SELL (Short)</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Amount in USDT</label>
+        <input type="number" class="field-input" id="manualAmount" placeholder="50" value="50" step="1" min="1">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">Stop Loss %</label>
+          <input type="number" class="field-input" id="manualSlPct" value="2.0" step="0.1" min="0.1">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Take Profit %</label>
+          <input type="number" class="field-input" id="manualTpPct" value="4.0" step="0.1" min="0.1">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="manualBuy()" style="width:100%;margin-top:8px">Place Order</button>
+      <p style="color:var(--text2);font-size:12px;margin-top:8px">⚠ Live mode: real money. Confirm carefully.</p>
+    </div>
+  </details>
 </div>
 
 <!-- Tab 3: History -->
@@ -364,16 +398,61 @@ body { padding-bottom: 70px; }
   <div id="tradesList"></div>
 </div>
 
+<!-- Tab 3b: Watchlist -->
+<div id="tab-watchlist" class="tab-content">
+  <h3 style="margin-bottom:12px;color:var(--gold)">👀 Watchlist</h3>
+
+  <!-- VIP coins (5s refresh) -->
+  <div class="scan-title">── VIP Coins (live, 5s refresh) ──</div>
+  <div id="vipCoinsList" class="card">
+    <p style="color:var(--text2)">Loading...</p>
+  </div>
+
+  <!-- Failed projects -->
+  <div class="scan-title" style="margin-top:20px">── Failed Projects (recovery watch) ──</div>
+  <div id="failedProjectsList" class="card">
+    <p style="color:var(--text2)">Loading...</p>
+  </div>
+</div>
+
 <!-- Tab 4: Reports -->
 <div id="tab-reports" class="tab-content">
-  <h3 style="margin-bottom:12px;color:var(--gold)">📑 التقارير الأسبوعية</h3>
+  <h3 style="margin-bottom:12px;color:var(--gold)">📑 Trading Reports</h3>
+
+  <!-- Date Range Custom Report -->
+  <details class="settings-section" open style="margin-bottom:16px">
+    <summary class="settings-title">🗓 Custom Date Range Report</summary>
+    <div style="padding-top:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field-group">
+          <label class="field-label">From</label>
+          <input type="date" class="field-input" id="reportFromDate">
+        </div>
+        <div class="field-group">
+          <label class="field-label">To</label>
+          <input type="date" class="field-input" id="reportToDate">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" onclick="setRangeQuick(1)" style="flex:1">Today</button>
+        <button class="btn" onclick="setRangeQuick(7)" style="flex:1">Last 7d</button>
+        <button class="btn" onclick="setRangeQuick(30)" style="flex:1">Last 30d</button>
+      </div>
+      <button class="btn btn-primary" onclick="generateRangeReport()" style="width:100%;margin-top:8px">📊 Generate Report</button>
+    </div>
+  </details>
+
+  <div id="rangeReportResult"></div>
+
+  <!-- Weekly summary still available -->
+  <div class="scan-title" style="margin-top:20px">── Weekly Reports ──</div>
   <div id="latestReport" class="card report-card">
-    <p style="color:var(--text2)">جاري التحميل...</p>
+    <p style="color:var(--text2)">Loading...</p>
   </div>
   <div class="report-actions">
-    <button class="btn btn-primary" onclick="sendWeeklyReport()">📤 إرسال الآن</button>
+    <button class="btn btn-primary" onclick="sendWeeklyReport()">📤 Send Now</button>
   </div>
-  <div class="scan-title" style="margin-top:20px">── آخر 4 أسابيع ──</div>
+  <div class="scan-title" style="margin-top:20px">── Last 4 Weeks ──</div>
   <div id="weeksList" class="weeks-list"></div>
 </div>
 
@@ -1257,9 +1336,13 @@ body { padding-bottom: 70px; }
     <svg viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
     <span>السجل</span>
   </button>
+  <button class="tab-btn" data-tab="watchlist">
+    <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+    <span>Watch</span>
+  </button>
   <button class="tab-btn" data-tab="reports">
     <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/></svg>
-    <span>التقارير</span>
+    <span>Reports</span>
   </button>
   <button class="tab-btn" data-tab="committee">
     <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
@@ -1302,6 +1385,17 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'committee') loadCommittee();
     if (btn.dataset.tab === 'chat') initChat();
     if (btn.dataset.tab === 'beast') loadBeastMode();
+    if (btn.dataset.tab === 'watchlist') {
+      loadWatchlist();
+      // Refresh VIP coins every 5s while tab is open
+      if (!window._watchlistInterval) {
+        window._watchlistInterval = setInterval(() => {
+          if (document.getElementById('tab-watchlist').classList.contains('active')) {
+            loadWatchlist(true);
+          }
+        }, 5000);
+      }
+    }
   });
 });
 
@@ -1558,6 +1652,7 @@ async function loadPositions() {
         <div class="pos-field"><span class="pos-field-label">ربح</span><span class="pos-field-value ${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${fmtPct(pnlPct)})</span></div>
         <div class="pos-field"><span class="pos-field-label">مفتوحة</span><span class="pos-field-value">منذ ${timeAgo(p.opened_ago_seconds)}</span></div>
       </div>
+      <button class="btn" onclick="closePosition('${p.symbol}')" style="width:100%;margin-top:8px;background:var(--red);color:#fff">✖ Close Position</button>
     </div>`;
   }).join('');
 }
@@ -2663,6 +2758,175 @@ setInterval(() => {
 }, 30000);
 setInterval(refresh, 120000);  // Full data refresh every 2 min regardless
 setInterval(fetchLivePrices, 5000);
+
+// ═══════════════════════════════════════════════════════════════════
+// MANUAL TRADE CONTROL
+// ═══════════════════════════════════════════════════════════════════
+
+async function closePosition(symbol) {
+  if (!confirm(`Close position on ${symbol}? This places a real market order.`)) return;
+  try {
+    const r = await fetch('/api/manual/close', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({symbol})
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(`Closed ${symbol} | PnL: ${d.pnl >= 0 ? '+' : ''}$${d.pnl.toFixed(2)} (${d.pnl_pct.toFixed(2)}%)`);
+      loadPositions();
+    } else {
+      toast('Close failed: ' + (d.error || 'unknown'));
+    }
+  } catch (e) {
+    toast('Close error: ' + e.message);
+  }
+}
+
+async function manualBuy() {
+  const symbol = document.getElementById('manualSymbol').value.trim().toUpperCase();
+  const side = document.getElementById('manualSide').value;
+  const amount_usdt = parseFloat(document.getElementById('manualAmount').value);
+  const sl_pct = parseFloat(document.getElementById('manualSlPct').value);
+  const tp_pct = parseFloat(document.getElementById('manualTpPct').value);
+
+  if (!symbol || !symbol.includes('/')) { toast('Invalid symbol — use BTC/USDT format'); return; }
+  if (!amount_usdt || amount_usdt <= 0) { toast('Invalid amount'); return; }
+
+  if (!confirm(`Place ${side} order: ${amount_usdt} USDT of ${symbol}?\nSL: ${sl_pct}%, TP: ${tp_pct}%`)) return;
+
+  try {
+    const r = await fetch('/api/manual/buy', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({symbol, side, amount_usdt, sl_pct, tp_pct})
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast(`✓ ${side} ${symbol} ${d.amount.toFixed(6)} @ $${d.price.toFixed(4)}`);
+      loadPositions();
+    } else {
+      toast('Order failed: ' + (d.error || 'unknown'));
+    }
+  } catch (e) {
+    toast('Order error: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DATE-RANGE REPORT
+// ═══════════════════════════════════════════════════════════════════
+
+function setRangeQuick(days) {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - (days - 1));
+  document.getElementById('reportFromDate').value = from.toISOString().slice(0, 10);
+  document.getElementById('reportToDate').value = to.toISOString().slice(0, 10);
+}
+
+async function generateRangeReport() {
+  const from = document.getElementById('reportFromDate').value;
+  const to = document.getElementById('reportToDate').value;
+  if (!from || !to) { toast('Pick both dates'); return; }
+
+  const container = document.getElementById('rangeReportResult');
+  container.innerHTML = '<div class="card"><p style="color:var(--text2)">Generating report...</p></div>';
+
+  try {
+    const r = await fetch(`/api/report/range?from=${from}&to=${to}`);
+    const d = await r.json();
+    if (d.error) { container.innerHTML = `<div class="card"><p style="color:var(--red)">${d.error}</p></div>`; return; }
+
+    const m = d.metrics || {};
+    const winColor = d.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    let html = `
+      <div class="card">
+        <h3 style="color:var(--gold);margin-bottom:8px">📊 ${d.from} → ${d.to}</h3>
+        <div class="stats-grid" style="margin:8px 0">
+          <div class="stat-box"><div class="stat-value">${d.total_trades}</div><div class="stat-label">Trades</div></div>
+          <div class="stat-box"><div class="stat-value">${d.wins}/${d.losses}</div><div class="stat-label">W/L</div></div>
+          <div class="stat-box"><div class="stat-value" style="color:${winColor}">$${d.total_pnl.toFixed(2)}</div><div class="stat-label">Total P&L</div></div>
+          <div class="stat-box"><div class="stat-value">${(m.win_rate || 0).toFixed(1)}%</div><div class="stat-label">Win Rate</div></div>
+          <div class="stat-box"><div class="stat-value">${m.sharpe || 0}</div><div class="stat-label">Sharpe</div></div>
+          <div class="stat-box"><div class="stat-value">${m.max_dd_pct || 0}%</div><div class="stat-label">Max DD</div></div>
+        </div>
+      </div>`;
+
+    if (d.trades.length === 0) {
+      html += '<div class="card"><p style="color:var(--text2)">No trades in this range.</p></div>';
+    } else {
+      html += '<div class="scan-title" style="margin-top:16px">── Trade-by-Trade ──</div>';
+      html += d.trades.map(t => `
+        <div class="card" style="border-left:3px solid ${t.is_win ? 'var(--green)' : 'var(--red)'};margin-bottom:8px">
+          <p style="font-size:13px;line-height:1.6;color:var(--text)">${t.narrative}</p>
+        </div>`).join('');
+    }
+
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="card"><p style="color:var(--red)">${e.message}</p></div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WATCHLIST — VIP coins + Failed projects
+// ═══════════════════════════════════════════════════════════════════
+
+async function loadWatchlist(silent = false) {
+  try {
+    const [vip, failed] = await Promise.all([
+      fetch('/api/watchlist/vip').then(r => r.json()),
+      fetch('/api/watchlist/failed').then(r => r.json()),
+    ]);
+    renderWatchlist('vipCoinsList', vip.coins || [], false);
+    renderWatchlist('failedProjectsList', failed.coins || [], true);
+  } catch (e) {
+    if (!silent) toast('Watchlist error: ' + e.message);
+  }
+}
+
+function renderWatchlist(elementId, coins, showStatus) {
+  const container = document.getElementById(elementId);
+  if (!coins.length) { container.innerHTML = '<p style="color:var(--text2)">No data</p>'; return; }
+
+  container.innerHTML = `
+    <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+          <th style="text-align:left;padding:6px">Symbol</th>
+          <th style="text-align:right;padding:6px">Price</th>
+          <th style="text-align:right;padding:6px">24h %</th>
+          ${showStatus ? '<th style="text-align:center;padding:6px">Status</th>' : '<th style="text-align:right;padding:6px">Volume</th>'}
+        </tr>
+      </thead>
+      <tbody>
+        ${coins.map(c => {
+          const sym = c.symbol.replace('/USDT', '');
+          const chgColor = c.change_24h > 0 ? 'var(--green)' : c.change_24h < 0 ? 'var(--red)' : 'var(--text2)';
+          const chgSign = c.change_24h > 0 ? '+' : '';
+          const price = c.unavailable ? 'N/A' : '$' + (c.price < 1 ? c.price.toFixed(6) : c.price.toFixed(2));
+          const volStr = c.volume_24h > 1e9 ? '$' + (c.volume_24h / 1e9).toFixed(2) + 'B' :
+                         c.volume_24h > 1e6 ? '$' + (c.volume_24h / 1e6).toFixed(1) + 'M' :
+                         '$' + c.volume_24h.toFixed(0);
+          const statusColor = c.status === 'PUMPING 🚀' ? 'var(--green)' :
+                              c.status === 'RECOVERING' ? 'var(--gold)' :
+                              c.status === 'DELISTED' ? 'var(--text2)' : 'var(--red)';
+          return `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px;font-weight:600">${sym}</td>
+            <td style="padding:6px;text-align:right">${price}</td>
+            <td style="padding:6px;text-align:right;color:${chgColor}">${chgSign}${c.change_24h.toFixed(2)}%</td>
+            ${showStatus
+              ? `<td style="padding:6px;text-align:center;color:${statusColor};font-size:11px">${c.status || '—'}</td>`
+              : `<td style="padding:6px;text-align:right;color:var(--text2)">${volStr}</td>`}
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+// Auto-fill date range with last 7 days on first load
+window.addEventListener('DOMContentLoaded', () => {
+  setRangeQuick(7);
+});
 </script>
 </body>
 </html>

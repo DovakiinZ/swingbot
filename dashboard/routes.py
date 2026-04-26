@@ -8,7 +8,7 @@ import json
 import time
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from typing import Optional
 from pathlib import Path
@@ -1532,5 +1532,341 @@ def create_app(store=None, state=None, config: dict = None):
         t = threading.Thread(target=_run, daemon=True, name='montecarlo')
         t.start()
         return jsonify({'success': True, 'message': 'Monte Carlo started'})
+
+    # ═══════════════════════════════════════════════════════════════════
+    # MANUAL TRADE CONTROL — buy/close from dashboard
+    # ═══════════════════════════════════════════════════════════════════
+
+    @app.route("/api/manual/close", methods=["POST"])
+    @login_required
+    def api_manual_close():
+        """Close an open position by symbol. Uses current market price."""
+        broker = app.config.get('broker')
+        if not broker:
+            return jsonify({'success': False, 'error': 'Broker not available'})
+
+        data = request.get_json() or {}
+        symbol = data.get('symbol')
+        if not symbol:
+            return jsonify({'success': False, 'error': 'symbol required'})
+
+        try:
+            from core.types import Signal, Side, Reason
+
+            # Find the open position
+            positions = broker.get_open_positions()
+            pos = next((p for p in positions if p.symbol == symbol), None)
+            if not pos:
+                return jsonify({'success': False, 'error': f'No open position for {symbol}'})
+
+            # Determine close side (opposite of position)
+            close_side = Side.SELL if pos.side == Side.BUY else Side.BUY
+
+            # Get current market price
+            market = app.config.get('market')
+            current_price = pos.entry_price
+            if market:
+                try:
+                    candles = market.fetch_ohlcv(symbol, '1m', limit=2)
+                    if candles:
+                        current_price = candles[-1].close
+                except Exception:
+                    pass
+
+            close_signal = Signal(
+                symbol=symbol, side=close_side, reason=Reason.MANUAL,
+                price=current_price, stop_loss=0, take_profit=0,
+            )
+
+            order = broker.place_order(close_signal, pos.amount)
+            if not order:
+                return jsonify({'success': False, 'error': 'Order placement failed'})
+
+            # Compute P&L for response
+            if pos.side == Side.BUY:
+                pnl = (current_price - pos.entry_price) * pos.amount
+            else:
+                pnl = (pos.entry_price - current_price) * pos.amount
+            pnl_pct = (pnl / (pos.entry_price * pos.amount)) * 100 if pos.entry_price else 0
+
+            logger.warning(f"[MANUAL CLOSE] {symbol} @ ${current_price:.4f} | PnL: ${pnl:+.2f} ({pnl_pct:+.2f}%)")
+            return jsonify({
+                'success': True, 'symbol': symbol,
+                'exit_price': current_price, 'pnl': pnl, 'pnl_pct': pnl_pct,
+            })
+        except Exception as e:
+            logger.error(f"[MANUAL CLOSE] failed: {e}")
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route("/api/manual/buy", methods=["POST"])
+    @login_required
+    def api_manual_buy():
+        """Place a manual buy/sell order from the dashboard."""
+        broker = app.config.get('broker')
+        market = app.config.get('market')
+        if not broker:
+            return jsonify({'success': False, 'error': 'Broker not available'})
+
+        data = request.get_json() or {}
+        symbol = (data.get('symbol') or '').upper().strip()
+        side = (data.get('side') or 'BUY').upper()
+        amount_usdt = float(data.get('amount_usdt', 0))
+        sl_pct = float(data.get('sl_pct', 2.0))      # 2% default stop
+        tp_pct = float(data.get('tp_pct', 4.0))      # 4% default target
+
+        if not symbol or '/' not in symbol:
+            return jsonify({'success': False, 'error': 'symbol must be like BTC/USDT'})
+        if amount_usdt <= 0:
+            return jsonify({'success': False, 'error': 'amount_usdt must be > 0'})
+        if side not in ('BUY', 'SELL'):
+            return jsonify({'success': False, 'error': 'side must be BUY or SELL'})
+
+        try:
+            from core.types import Signal, Side, Reason
+
+            # Get current price
+            current_price = 0
+            if market:
+                candles = market.fetch_ohlcv(symbol, '1m', limit=2)
+                if candles:
+                    current_price = candles[-1].close
+            if current_price <= 0:
+                return jsonify({'success': False, 'error': 'Could not fetch current price'})
+
+            qty = amount_usdt / current_price
+            sig_side = Side.BUY if side == 'BUY' else Side.SELL
+
+            # Calculate SL/TP
+            if side == 'BUY':
+                sl = current_price * (1 - sl_pct / 100)
+                tp = current_price * (1 + tp_pct / 100)
+            else:
+                sl = current_price * (1 + sl_pct / 100)
+                tp = current_price * (1 - tp_pct / 100)
+
+            sig = Signal(
+                symbol=symbol, side=sig_side, reason=Reason.MANUAL,
+                price=current_price, stop_loss=sl, take_profit=tp,
+            )
+
+            order = broker.place_order(sig, qty)
+            if not order:
+                return jsonify({'success': False, 'error': 'Order placement failed'})
+
+            logger.warning(f"[MANUAL BUY] {symbol} {side} {qty:.6f} @ ${current_price:.4f} "
+                           f"(SL ${sl:.4f}, TP ${tp:.4f})")
+            return jsonify({
+                'success': True, 'symbol': symbol, 'side': side,
+                'amount': qty, 'price': current_price,
+                'stop_loss': sl, 'take_profit': tp,
+            })
+        except Exception as e:
+            logger.error(f"[MANUAL BUY] failed: {e}")
+            return jsonify({'success': False, 'error': str(e)})
+
+    # ═══════════════════════════════════════════════════════════════════
+    # DATE-RANGE TRADE REPORT — human-readable transaction history
+    # ═══════════════════════════════════════════════════════════════════
+
+    @app.route("/api/report/range")
+    @login_required
+    def api_report_range():
+        """
+        Generate a human-readable trade report for a date range.
+        Query params: from=YYYY-MM-DD, to=YYYY-MM-DD
+        Defaults to last 7 days if not provided.
+        """
+        from_str = request.args.get('from', '')
+        to_str = request.args.get('to', '')
+
+        try:
+            if from_str:
+                from_dt = datetime.strptime(from_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+            else:
+                from_dt = datetime.now(timezone.utc) - timedelta(days=7)
+
+            if to_str:
+                to_dt = datetime.strptime(to_str, '%Y-%m-%d').replace(tzinfo=timezone.utc) + timedelta(days=1)
+            else:
+                to_dt = datetime.now(timezone.utc) + timedelta(days=1)
+        except Exception as e:
+            return jsonify({'error': f'Invalid date format: {e}'}), 400
+
+        from_ms = int(from_dt.timestamp() * 1000)
+        to_ms = int(to_dt.timestamp() * 1000)
+
+        try:
+            import sqlite3
+            cfg = _load_config()
+            conn = sqlite3.connect(cfg.get('db_path', 'swingbot.db'))
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, symbol, side, entry_price, exit_price, amount,
+                       pnl, pnl_percent, entry_time, exit_time, exit_reason,
+                       stop_loss, take_profit
+                FROM trades
+                WHERE exit_time IS NOT NULL
+                  AND exit_time >= ? AND exit_time <= ?
+                ORDER BY exit_time DESC
+            """, (from_ms, to_ms))
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+        except Exception as e:
+            return jsonify({'error': f'DB error: {e}'}), 500
+
+        # Build human-readable narrative
+        narratives = []
+        total_pnl = 0.0
+        wins = 0
+        losses = 0
+
+        for t in rows:
+            entry_dt = datetime.fromtimestamp(t['entry_time'] / 1000, tz=timezone.utc) if t['entry_time'] else None
+            exit_dt = datetime.fromtimestamp(t['exit_time'] / 1000, tz=timezone.utc) if t['exit_time'] else None
+            pnl = t.get('pnl') or 0
+            pnl_pct = t.get('pnl_percent') or 0
+            total_pnl += pnl
+            if pnl > 0:
+                wins += 1
+            else:
+                losses += 1
+
+            side_word = 'bought' if t.get('side') == 'BUY' else 'sold short'
+            outcome_word = 'WIN ✅' if pnl > 0 else 'LOSS ❌'
+            entry_str = entry_dt.strftime('%a %b %d at %H:%M UTC') if entry_dt else 'unknown'
+            exit_str = exit_dt.strftime('%H:%M UTC') if exit_dt else 'unknown'
+            hold_h = ((t.get('exit_time') or 0) - (t.get('entry_time') or 0)) / 3600000 if (t.get('exit_time') and t.get('entry_time')) else 0
+
+            narrative = (
+                f"On {entry_str} the bot {side_word} {t['amount']:.6f} {t['symbol']} "
+                f"at ${t['entry_price']:,.4f} (stop: ${t.get('stop_loss', 0):,.4f}, "
+                f"target: ${t.get('take_profit', 0):,.4f}). "
+                f"Closed at {exit_str} for ${t['exit_price']:,.4f} via {t.get('exit_reason') or 'exit'}. "
+                f"Result: {outcome_word} ${pnl:+.2f} ({pnl_pct:+.2f}%). "
+                f"Held {hold_h:.1f}h."
+            )
+            narratives.append({
+                'symbol': t['symbol'],
+                'side': t['side'],
+                'entry_price': t['entry_price'],
+                'exit_price': t['exit_price'],
+                'amount': t['amount'],
+                'pnl': pnl,
+                'pnl_pct': pnl_pct,
+                'exit_reason': t.get('exit_reason') or 'exit',
+                'entry_time': entry_dt.isoformat() if entry_dt else None,
+                'exit_time': exit_dt.isoformat() if exit_dt else None,
+                'hold_hours': round(hold_h, 1),
+                'narrative': narrative,
+                'is_win': pnl > 0,
+            })
+
+        # Compute summary metrics
+        from reports.metrics import compute_all_metrics
+        metric_trades = [{'pnl': t['pnl'], 'pnl_pct': t['pnl_pct']} for t in narratives]
+        start_bal = _load_config().get('paper_start_balance_usdt', 1000.0)
+        metrics = compute_all_metrics(metric_trades, initial_balance=start_bal) if metric_trades else {}
+
+        return jsonify({
+            'from': from_dt.strftime('%Y-%m-%d'),
+            'to': (to_dt - timedelta(days=1)).strftime('%Y-%m-%d'),
+            'total_trades': len(narratives),
+            'wins': wins, 'losses': losses,
+            'total_pnl': round(total_pnl, 2),
+            'trades': narratives,
+            'metrics': metrics,
+        })
+
+    # ═══════════════════════════════════════════════════════════════════
+    # WATCHLISTS — VIP coins (5s refresh) + failed projects tracker
+    # ═══════════════════════════════════════════════════════════════════
+
+    # VIP — top market cap, most liquid
+    VIP_COINS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
+                 'DOGE/USDT', 'ADA/USDT', 'AVAX/USDT', 'LINK/USDT', 'TON/USDT']
+
+    # Failed/troubled projects to watch for revival or further crash
+    FAILED_PROJECTS = ['LUNA/USDT', 'LUNC/USDT', 'USTC/USDT', 'FTT/USDT',
+                       'SRM/USDT', 'CEL/USDT', 'BLUR/USDT', 'OMG/USDT']
+
+    _watchlist_cache = {'vip': {'data': [], 'updated_at': 0},
+                        'failed': {'data': [], 'updated_at': 0}}
+
+    def _fetch_watchlist(symbols, cache_key, ttl=5):
+        """Fetch live ticker data with TTL cache."""
+        cache = _watchlist_cache[cache_key]
+        now = time.time()
+        if now - cache['updated_at'] < ttl and cache['data']:
+            return cache['data']
+
+        market = app.config.get('market')
+        if not market:
+            return []
+
+        results = []
+        try:
+            tickers = market.exchange.fetch_tickers()
+            for sym in symbols:
+                t = tickers.get(sym, {})
+                if not t:
+                    # Try without /USDT suffix variations
+                    for k, v in tickers.items():
+                        if sym.split('/')[0] == k.split('/')[0] and '/USDT' in k:
+                            t = v
+                            break
+                if t:
+                    results.append({
+                        'symbol': sym,
+                        'price': float(t.get('last') or 0),
+                        'change_24h': float(t.get('percentage') or 0),
+                        'volume_24h': float(t.get('quoteVolume') or 0),
+                        'high_24h': float(t.get('high') or 0),
+                        'low_24h': float(t.get('low') or 0),
+                    })
+                else:
+                    results.append({
+                        'symbol': sym, 'price': 0, 'change_24h': 0,
+                        'volume_24h': 0, 'high_24h': 0, 'low_24h': 0,
+                        'unavailable': True,
+                    })
+        except Exception as e:
+            logger.warning(f"[Watchlist] fetch failed: {e}")
+
+        cache['data'] = results
+        cache['updated_at'] = now
+        return results
+
+    @app.route("/api/watchlist/vip")
+    @login_required
+    def api_watchlist_vip():
+        """Top stable/famous coins — refreshes every 5s on the client."""
+        return jsonify({
+            'updated_at': time.time(),
+            'coins': _fetch_watchlist(VIP_COINS, 'vip', ttl=5),
+        })
+
+    @app.route("/api/watchlist/failed")
+    @login_required
+    def api_watchlist_failed():
+        """Failed/rugged projects — watch for revival signs."""
+        coins = _fetch_watchlist(FAILED_PROJECTS, 'failed', ttl=30)
+        # Tag each coin with a "status"
+        for c in coins:
+            chg = c.get('change_24h', 0)
+            if c.get('unavailable'):
+                c['status'] = 'DELISTED'
+            elif chg > 20:
+                c['status'] = 'PUMPING 🚀'
+            elif chg > 5:
+                c['status'] = 'RECOVERING'
+            elif chg < -10:
+                c['status'] = 'CRASHING'
+            else:
+                c['status'] = 'DEAD'
+        return jsonify({
+            'updated_at': time.time(),
+            'coins': coins,
+        })
 
     return app
