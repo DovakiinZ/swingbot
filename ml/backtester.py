@@ -57,12 +57,18 @@ def backtest_symbol(
     # Add scanner scores
     scores = []
     for i in range(len(df)):
-        if i < 50:
+        # Score candle i AS THE LAST CLOSED CANDLE, matching live execution's
+        # no-repaint convention (scanner/strategy treat the final slice row as
+        # the still-forming candle). The slice therefore ends at i+1 so that
+        # candle i lands at iloc[-2], keeping scanner_score aligned with the
+        # forward-looking tb_label at row i. The final row has no following
+        # candle, so it is skipped.
+        if i < 50 or i >= len(df) - 1:
             scores.append(0)
             continue
-        slice_df = df.iloc[max(0, i - 100):i + 1]
+        slice_df = df.iloc[max(0, i - 100):i + 2]
         try:
-            regime = RegimeDetector.detect(slice_df.iloc[-1])
+            regime = RegimeDetector.detect(slice_df.iloc[-2])
             score, _ = scanner.score_symbol(slice_df, regime)
             scores.append(score)
         except Exception:
