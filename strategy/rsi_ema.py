@@ -45,11 +45,16 @@ class RsiEmaStrategy:
         current_position: None/False for no position, True for backward compat
                           (assumes long), or a Position object.
         """
-        if df.empty or len(df) < 5:
+        if df.empty or len(df) < 6:
             return None
 
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
+        # ── No repainting ────────────────────────────────────────────────────
+        # ccxt returns the currently-forming (incomplete) candle as the LAST
+        # row. Its RSI/EMA/ATR mutate on every tick, so a signal seen mid-candle
+        # can vanish by the close -- the core reason paper (settled candles) and
+        # live (forming candle) diverge. Decide on the last CLOSED candle.
+        curr = df.iloc[-2]
+        prev = df.iloc[-3]
 
         rsi = curr['rsi']
         ema_fast = curr['ema_fast']
@@ -76,7 +81,7 @@ class RsiEmaStrategy:
         if not has_position:
             # FIX 2: Trend confirmation — at least 2 of last 3 closed candles must agree
             # Prevents entering on false signals, but allows normal mixed-candle trends
-            last3 = df.iloc[-4:-1]  # 3 candles before current (closed candles)
+            last3 = df.iloc[-5:-2]  # 3 closed candles before the decision candle (-2)
             bullish_count = sum(
                 1 for i in range(len(last3)) if last3.iloc[i]['close'] > last3.iloc[i]['open']
             )

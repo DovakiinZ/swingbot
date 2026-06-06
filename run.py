@@ -301,7 +301,11 @@ def main():
             account_type = CONFIG.get('bybit_account_type', 'spot')
             broker = BybitBroker(store, market, account_type=account_type)
         elif trading_exchange == 'binance':
-            broker = BinanceBroker(store, market)
+            broker = BinanceBroker(
+                store, market,
+                limit_offset_pct=CONFIG.get('limit_order_offset_pct', 0.0015),
+                use_hard_stops=CONFIG.get('hard_stop_loss', True),
+            )
         else:
             raise ValueError(f"Unknown trading exchange: {trading_exchange}")
     else:
@@ -608,6 +612,15 @@ def main():
 
         try:
             logger.debug(f"=== Cycle Start: {datetime.now(timezone.utc)} ===")
+
+            # -- Reconcile exchange state first --------------------------------
+            # In live mode this detects hard stop-loss orders that fired on the
+            # exchange between cycles and closes those positions in the store,
+            # so the rest of the cycle reasons about an accurate book.
+            try:
+                broker.sync()
+            except Exception as e:
+                logger.error(f"Broker sync failed: {e}")
 
             # -- Balance / P&L sync -------------------------------------------
             current_bal = broker.get_balance()
@@ -926,7 +939,9 @@ def main():
                         continue
 
                     current_candle = candles[-1]
-                    regime = RegimeDetector.detect(df.iloc[-1])
+                    # Classify regime on the last CLOSED candle (no repaint),
+                    # matching how strategy.check_signal evaluates indicators.
+                    regime = RegimeDetector.detect(df.iloc[-2]) if len(df) >= 2 else RegimeDetector.detect(df.iloc[-1])
 
                     # Update unrealized PnL in dashboard
                     if pos.side == Side.BUY:
@@ -1096,9 +1111,10 @@ def main():
                     if not candles:
                         continue
                     df = FeatureEngine.compute_indicators(candles)
-                    if df.empty:
+                    if df.empty or len(df) < 3:
                         continue
-                    regime = RegimeDetector.detect(df.iloc[-1])
+                    # Classify on the last CLOSED candle (no repaint).
+                    regime = RegimeDetector.detect(df.iloc[-2])
                     score, breakout_detected = scanner.score_symbol(df, regime)
 
                     entry = {

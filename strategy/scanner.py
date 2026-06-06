@@ -54,11 +54,14 @@ class MarketScanner:
         In that case, return 0 pts even if all other conditions pass.
         """
         lookback = 20
-        if len(df) < lookback + 1:
+        # +2: the final row is the still-forming candle (skipped to avoid
+        # repainting), so we need the last closed candle plus `lookback` closed
+        # candles before it.
+        if len(df) < lookback + 2:
             return 0.0, False
 
-        recent = df.iloc[-(lookback+1):-1]
-        curr   = df.iloc[-1]
+        recent = df.iloc[-(lookback+2):-2]   # N closed candles before the last close
+        curr   = df.iloc[-2]                 # last CLOSED candle (no repaint)
 
         # 1. Compression check
         atr_pct = recent.get('atr_percent')
@@ -111,14 +114,15 @@ class MarketScanner:
           - RANGING regime
           - ADX below minimum (choppy, no real trend)
         """
-        if df is None or df.empty or len(df) < 2:
+        if df is None or df.empty or len(df) < 3:
             return 0.0, False
 
         # Hard gate 1: Never trade in RANGING regime (no directional edge)
         if regime == MarketRegime.RANGING:
             return 0.0, False
 
-        curr = df.iloc[-1]
+        # Score the last CLOSED candle, not the forming one (no repaint).
+        curr = df.iloc[-2]
 
         # Hard gate 2: ADX minimum — choppy market filter
         # Research: ADX < 20 eliminates the weakest 30% of trades with worst win rates
