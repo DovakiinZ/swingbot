@@ -32,7 +32,7 @@ funding_short_block: -0.0005
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 40
+min_score: 60
 min_rr_ratio: 1.5
 volume_multiplier: 1.0
 signal_score_threshold: 35
@@ -40,7 +40,7 @@ signal_score_threshold: 35
 # -- Risk Management -----------------------------------------------------------
 # Small-account compounding mode: 1 position at a time using 95% of balance
 # Scales up naturally as balance grows: $5 → $10 → $20 → $50 → $100 → $500 → $1000
-risk_per_trade_percent: 3.0
+risk_per_trade_percent: 1.5
 max_risk_per_trade_pct: 5.0
 max_open_positions: 1
 max_portfolio_risk_percent: 100.0
@@ -77,9 +77,9 @@ min_24h_volume_usdt: 1000000
 # -- Sentiment (4-source engine) -----------------------------------------------
 sentiment_threshold: 0
 fear_greed_enabled: true
-cryptopanic_token: ""
-santiment_token: ""
-lunarcrush_token: ""
+cryptopanic_token: " "
+santiment_token: " "
+lunarcrush_token: " "
 
 # -- Committee Agent Weights ---------------------------------------------------
 committee_enabled: false
@@ -131,7 +131,7 @@ websocket:
     - MATIC/USDT
 
 # -- ATR-Based Stop Loss / Take Profit -----------------------------------------
-atr_multiplier_sl: 1.5
+atr_multiplier_sl: 2.0
 atr_multiplier_tp: 3.0
 
 # -- Trailing Stop -------------------------------------------------------------
@@ -168,11 +168,11 @@ notifications:
       reports: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
   telegram:
     enabled: false
-    bot_token: ""
-    chat_id: ""
+    bot_token: " "
+    chat_id: " "
 
 # -- Beast Mode: Protections ---------------------------------------------------
-# Advanced risk guards — layer multiple safety nets beyond circuit breaker
+# Advanced risk guards — layer multiple safety nets beyond circuit breaker protections
 protections:
   stoploss_guard_enabled: true
   stoploss_guard_lookback_min: 30
