@@ -170,6 +170,9 @@ notifications:
     enabled: false
     bot_token: " "
     chat_id: " "
+  poke:
+    enabled: true
+    webhook_url: 'https://poke.com/api/v1/inbound/ingest/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZWFkYmM2Mi1hODFjLTQ1YWItYmZjOS1jNjY0ZjdiMmZjOTMiLCJqdGkiOiI3MThlZTY4Mi02MThkLTQxMzQtYTJkMC1lZjU4M2U1YmZiYWEiLCJpYXQiOjE3ODE4NjQ3NDQsImV4cCI6MjA5NzIyNDc0NH0.pnY0iTPzHaJgXDsvRfMQ9CufODxepBbn76T-0ojf9wQ'
 
 # -- Beast Mode: Protections ---------------------------------------------------
 # Advanced risk guards — layer multiple safety nets beyond circuit breaker protections
