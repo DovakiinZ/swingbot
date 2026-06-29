@@ -40,7 +40,7 @@ signal_score_threshold: 35
 # -- Risk Management -----------------------------------------------------------
 # Small-account compounding mode: 1 position at a time using 95% of balance
 # Scales up naturally as balance grows: $5 → $10 → $20 → $50 → $100 → $500 → $1000
-risk_per_trade_percent: 1.5
+risk_per_trade_percent: 2.0
 max_risk_per_trade_pct: 5.0
 max_open_positions: 1
 max_portfolio_risk_percent: 100.0
@@ -49,6 +49,11 @@ daily_loss_limit_percent: 20.0
 max_daily_loss_usd: 50.0
 consecutive_loss_limit: 5
 api_failure_limit: 5
+
+# -- Strategy Parameters (RSI/EMA) ---------------------------------------------
+rsi_period: 14
+rsi_entry: 35
+rsi_exit: 65
 
 # -- Compounding ---------------------------------------------------------------
 base_balance: 1000.0
@@ -172,7 +177,7 @@ notifications:
     chat_id: " "
   poke:
     enabled: true
-    webhook_url: 'https://poke.com/api/v1/inbound/ingest/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZWFkYmM2Mi1hODFjLTQ1YWItYmZjOS1jNjY0ZjdiMmZjOTMiLCJqdGkiOiI3MThlZTY4Mi02MThkLTQxMzQtYTJkMC1lZjU4M2U1YmZiYWEiLCJpYXQiOjE3ODE4NjQ3NDQsImV4cCI6MjA5NzIyNDc0NH0.pnY0iTPzHaJgXDsvRfMQ9CufODxepBbn76T-0ojf9wQ'
+    webhook_url: 'https://poke.com/api/v1/inbound/ingest/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZWFkYmM2Mi1hODFjLTQ1YWAbmZjOS1jNjY0ZjdiMmZjOTMiLCJqdGkiOiI3MThlZTY4Mi02MThkLTQxMzQtYTJkMC1lZjU4M2U1YmZiYWEiLCJpYXQiOjE3ODE4NjQ3NDQsImV4cCI6MjA5NzIyNDc0NH0.pnY0iTPzHaJgXDsvRfMQ9CufODxepBbn76T-0ojf9wQ'
 
 # -- Beast Mode: Protections ---------------------------------------------------
 # Advanced risk guards — layer multiple safety nets beyond circuit breaker protections
