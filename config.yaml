@@ -1,59 +1,48 @@
 # ==============================================================================
-# SWINGBOT CONFIGURATION — Production Ready
+# SWINGBOT CONFIGURATION — 24/7 Monitoring Mode (Risk Off)
 # ==============================================================================
 
 # -- Exchange ------------------------------------------------------------------
 trading_exchange: mexc
 market_data_exchange: bybit
 bybit_account_type: spot
-trading_mode: live
+trading_mode: paper  # RISK OFF: Trading Engine Offline (Simulation Only)
 
 # -- Scan Speed ----------------------------------------------------------------
-scan_interval_minutes: 10
+scan_interval_minutes: 5  # Increased resolution for weekend monitoring
 
 # -- Strategy & Scanning -------------------------------------------------------
 timeframe: "1h"
-lookback: 100
-scan_top_n: 30
+lookback: 200  # Extended lookback for weekend gap analysis
+scan_top_n: 50  # Broader scan to prepare for Monday open
 scanner:
   enabled: true
   breakout_lookback: 20
-  btc_correlation_factor: 0.7
+  btc_correlation_factor: 0.8  # Monitor high-correlation moves
 
 # -- Multi-Timeframe Confluence ------------------------------------------------
-mtf_filter_enabled: false
+mtf_filter_enabled: true  # Confluence enabled for higher-quality monitoring
 htf_timeframe: "4h"
 htf_ema_period: 200
 
-# -- Funding Rate Filter -------------------------------------------------------
-funding_rate_filter: false
-funding_long_block: 0.0008
-funding_short_block: -0.0005
-
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 60
-min_rr_ratio: 1.5
-volume_multiplier: 1.0
-signal_score_threshold: 35
+min_score: 75  # Ultra-conservative gate for monitoring
+min_rr_ratio: 2.0
+volume_multiplier: 1.5
+signal_score_threshold: 65
 
 # -- Risk Management -----------------------------------------------------------
-# Small-account compounding mode: 1 position at a time using 95% of balance
-# Scales up naturally as balance grows: $5 → $10 → $20 → $50 → $100 → $500 → $1000
-risk_per_trade_percent: 2.0
-max_risk_per_trade_pct: 5.0
-max_open_positions: 1
-max_portfolio_risk_percent: 100.0
-max_single_position_percent: 95.0
-daily_loss_limit_percent: 20.0
-max_daily_loss_usd: 50.0
-consecutive_loss_limit: 5
+# RISK OFF MODE: Settings kept for simulation tracking
+risk_per_trade_percent: 0.0  # ZERO RISK
+max_risk_per_trade_pct: 0.0
+max_open_positions: 0        # No live positions allowed
+max_portfolio_risk_percent: 0.0
+max_single_position_percent: 0.0
+daily_loss_limit_percent: 1.0
+max_daily_loss_usd: 10.0
+consecutive_loss_limit: 1
 api_failure_limit: 5
-
-# -- Strategy Parameters (RSI/EMA) ---------------------------------------------
-rsi_period: 14
-rsi_entry: 35
-rsi_exit: 65
 
 # -- Compounding ---------------------------------------------------------------
 base_balance: 1000.0
@@ -61,64 +50,24 @@ peak_balance_tracking: true
 drawdown_reset_threshold: 0.20
 
 # -- Market Regime Detection ---------------------------------------------------
-regime_adx_threshold: 15
-
-# -- Breakout Detection --------------------------------------------------------
-breakout_lookback: 20
-breakout_volume_mult: 2.0
-breakout_compression_atr: 2.0
-
-# -- Database ------------------------------------------------------------------
-db_path: "swingbot.db"
+regime_adx_threshold: 20  # Only flag strong trends during low-vol weekends
 
 # -- Paper Trading -------------------------------------------------------------
 paper_start_balance_usdt: 1000.0
 
-# -- Dynamic Symbol Scanner (Binance + Bybit + MEXC) --------------------------
+# -- Dynamic Symbol Scanner ----------------------------------------------------
 dynamic_symbols: true
-max_symbols: 50
-min_24h_volume_usdt: 1000000
+max_symbols: 100  # Maximum visibility for Monday setup detection
+min_24h_volume_usdt: 2000000
 
 # -- Sentiment (4-source engine) -----------------------------------------------
-sentiment_threshold: 0
+sentiment_threshold: 10  # Conservative sentiment gate
 fear_greed_enabled: true
-cryptopanic_token: " "
-santiment_token: " "
-lunarcrush_token: " "
-
-# -- Committee Agent Weights ---------------------------------------------------
-committee_enabled: false
-trend_agent_weight: 0.25
-momentum_agent_weight: 0.20
-sentiment_agent_weight: 0.25
-risk_agent_weight: 0.20
-pattern_agent_weight: 0.10
-
-# -- Volume Filter -------------------------------------------------------------
-min_volume_usdt: 5000000
-
-# -- Polymarket ----------------------------------------------------------------
-polymarket:
-  enabled: false
-  update_hours: 6
-  markets: []
-  default_risk_scale_on_failure: 1.0
-
-# -- Multi-Armed Bandit --------------------------------------------------------
-bandit:
-  exploration_prob: 0.2
-
-# -- Trading Hours -------------------------------------------------------------
-trading_hours:
-  enabled: false
 
 # -- Account -------------------------------------------------------------------
-account_name: "Swingbot Live"
-live: true
+account_name: "Swingbot Monitoring Only"
+live: false  # RISK OFF
 show_balances_on_startup: true
-
-# -- Localization --------------------------------------------------------------
-lang: "en"
 
 # -- WebSocket Real-Time Monitor -----------------------------------------------
 websocket:
@@ -130,36 +79,13 @@ websocket:
     - BNB/USDT
     - XRP/USDT
     - DOGE/USDT
-    - ADA/USDT
     - AVAX/USDT
-    - DOT/USDT
-    - MATIC/USDT
+    - PEPE/USDT
+    - WIF/USDT
 
 # -- ATR-Based Stop Loss / Take Profit -----------------------------------------
-atr_multiplier_sl: 2.0
-atr_multiplier_tp: 3.0
-
-# -- Trailing Stop -------------------------------------------------------------
-trailing_stop_activate_pct: 0.01
-trailing_stop_trail_pct: 0.008
-
-# -- Momentum Breakout Strategy ------------------------------------------------
-momentum_min_change: 0.003
-momentum_min_volume: 1.5
-momentum_sl_mult: 2.0
-momentum_tp_mult: 4.0
-momentum_cooldown_sec: 300
-
-# -- Trailing Entry ------------------------------------------------------------
-trailing_entry:
-  enabled: false
-  pullback_pct: 0.003
-  expiry_seconds: 3600
-
-# -- Kelly Criterion Sizing ----------------------------------------------------
-kelly_sizing:
-  enabled: false
-  fraction: 0.25
+atr_multiplier_sl: 2.5  # Wider stops for volatile gap monitoring
+atr_multiplier_tp: 5.0
 
 # -- Notifications -------------------------------------------------------------
 notifications:
@@ -171,47 +97,13 @@ notifications:
       closed: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
       warnings: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
       reports: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
-  telegram:
-    enabled: false
-    bot_token: " "
-    chat_id: " "
-  poke:
-    enabled: true
-    webhook_url: 'https://poke.com/api/v1/inbound/ingest/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5ZWFkYmM2Mi1hODFjLTQ1YWAbmZjOS1jNjY0ZjdiMmZjOTMiLCJqdGkiOiI3MThlZTY4Mi02MThkLTQxMzQtYTJkMC1lZjU4M2U1YmZiYWEiLCJpYXQiOjE3ODE4NjQ3NDQsImV4cCI6MjA5NzIyNDc0NH0.pnY0iTPzHaJgXDsvRfMQ9CufODxepBbn76T-0ojf9wQ'
 
 # -- Beast Mode: Protections ---------------------------------------------------
-# Advanced risk guards — layer multiple safety nets beyond circuit breaker protections
 protections:
   stoploss_guard_enabled: true
-  stoploss_guard_lookback_min: 30
-  stoploss_guard_trade_limit: 3
-  stoploss_guard_pause_hours: 4
   cooldown_enabled: true
-  cooldown_minutes: 60
   max_dd_enabled: true
-  max_dd_lookback_trades: 10
-  max_dd_pct: 15.0
-  max_dd_pause_hours: 6
-  low_profit_enabled: true
-  low_profit_min_trades: 5
-  low_profit_min_wr: 30.0
-  low_profit_disable_hours: 24
-
-# -- Beast Mode: Edge Tracking -------------------------------------------------
-edge_tracker:
-  enabled: true
-  lookback_days: 30
-  min_trades_for_edge: 5
-
-# -- Beast Mode: Hyperopt ------------------------------------------------------
-hyperopt:
-  default_symbol: "BTC/USDT"
-  default_days: 60
-  default_trials: 50
-
-# -- Beast Mode: Monte Carlo ---------------------------------------------------
-monte_carlo:
-  default_runs: 1000
+  max_dd_pct: 5.0  # Ultra-tight protection
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:
