@@ -57,25 +57,11 @@ class RiskEngine:
         current_balance: float,
         base_balance: float,
         setup_score: float,
-        peak_balance: float
+        peak_balance: float,
+        is_choppy: bool = False
     ) -> float:
         """
         Dynamic risk % based on account growth phase and setup quality.
-
-        Growth phases (from INVESTOR_MINDSET.md compounding plan):
-          Phase 1: balance < 2.5x base  -> 3.0% base risk
-          Phase 2: balance < 5.0x base  -> 3.5% base risk
-          Phase 3: balance >= 5.0x base -> 4.0% base risk
-
-        Setup score multiplier:
-          score >= 80 -> 1.5x  (high conviction -- size up)
-          score >= 65 -> 1.0x  (standard)
-          score <  65 -> 0.75x (low conviction -- size down)
-
-        Drawdown protection:
-          If drawdown from peak > 20% -> reset to Phase 1 risk (3.0%)
-
-        Hard cap: never exceed 5.0% of current balance on any single trade.
         """
         # Drawdown check
         if peak_balance > 0:
@@ -100,6 +86,11 @@ class RiskEngine:
             multiplier = 0.75
 
         risk_pct = base_risk * multiplier
+        
+        # Chop protection: Halve risk during choppy regimes
+        if is_choppy:
+            risk_pct *= 0.5
+            
         return min(risk_pct, 5.0)  # Hard cap at 5%
 
     def calculate_position_size(self, signal: Signal, reserved_capital: float = 0.0,
@@ -154,3 +145,62 @@ class RiskEngine:
             return False, f"Size {size} < Min {min_amount}"
 
         return True, "OK"
+
+    @staticmethod
+    def risk_to_qty(
+        capital: float,
+        risk_pct: float,
+        entry_price: float,
+        stop_price: float,
+        market_structure: dict = None
+    ) -> float:
+        """
+        Convert a risk percentage into an exchange-valid order quantity.
+        """
+        import math
+
+        sl_distance = abs(entry_price - stop_price)
+        if sl_distance == 0 or entry_price == 0:
+            return 0.0
+
+        risk_amount = capital * (risk_pct / 100.0)
+        qty = risk_amount / sl_distance
+
+        # Cap to available capital
+        max_qty = capital / entry_price
+        qty = min(qty, max_qty)
+
+        if not market_structure:
+            return qty
+
+        # Apply exchange precision constraints
+        limits = market_structure.get('limits', {})
+        precision = market_structure.get('precision', {})
+
+        # Step size / amount precision
+        amount_precision = precision.get('amount')
+        if amount_precision is not None:
+            if isinstance(amount_precision, int):
+                # Decimal places (e.g. 3 means 0.001 step)
+                factor = 10 ** amount_precision
+                qty = math.floor(qty * factor) / factor
+            elif isinstance(amount_precision, float) and amount_precision > 0:
+                # Step size (e.g. 0.01)
+                qty = math.floor(qty / amount_precision) * amount_precision
+
+        # Min amount check
+        min_amount = limits.get('amount', {}).get('min')
+        if min_amount and qty < min_amount:
+            return 0.0
+
+        # Min cost (notional) check
+        min_cost = limits.get('cost', {}).get('min')
+        if min_cost and (qty * entry_price) < min_cost:
+            return 0.0
+
+        # Max amount check
+        max_amount = limits.get('amount', {}).get('max')
+        if max_amount and qty > max_amount:
+            qty = max_amount
+
+        return qty
