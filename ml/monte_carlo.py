@@ -119,7 +119,7 @@ def run_from_trades_db(db_path: str = "swingbot.db", n_runs: int = 1000) -> dict
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT pnl_percent FROM trades WHERE pnl_percent IS NOT NULL AND pnl_percent != 0"
+        "SELECT pnl_percent FROM positions WHERE status = 'CLOSED' AND pnl_percent IS NOT NULL AND pnl_percent != 0"
     )
     rows = cursor.fetchall()
     conn.close()
