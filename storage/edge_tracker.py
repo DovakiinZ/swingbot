@@ -67,8 +67,9 @@ class EdgeTracker:
             # Get all closed trades from last N days
             cursor.execute(f"""
                 SELECT symbol, pnl, pnl_percent
-                FROM trades
-                WHERE pnl IS NOT NULL
+                FROM positions
+                WHERE status = 'CLOSED'
+                  AND pnl IS NOT NULL
                   AND exit_time IS NOT NULL
                   AND exit_time > strftime('%s','now','-{lookback_days} days') * 1000
                 ORDER BY exit_time DESC

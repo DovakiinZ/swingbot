@@ -1330,8 +1330,8 @@ def create_app(store=None, state=None, config: dict = None):
                 conn = sqlite3.connect(cfg.get('db_path', 'swingbot.db'))
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT pnl, pnl_percent FROM trades
-                    WHERE pnl IS NOT NULL AND exit_time IS NOT NULL
+                    SELECT pnl, pnl_percent FROM positions
+                    WHERE status = 'CLOSED' AND pnl IS NOT NULL AND exit_time IS NOT NULL
                     ORDER BY exit_time DESC LIMIT 200
                 """)
                 rows = cursor.fetchall()
@@ -1705,8 +1705,9 @@ def create_app(store=None, state=None, config: dict = None):
                 SELECT id, symbol, side, entry_price, exit_price, amount,
                        pnl, pnl_percent, entry_time, exit_time, exit_reason,
                        stop_loss, take_profit
-                FROM trades
-                WHERE exit_time IS NOT NULL
+                FROM positions
+                WHERE status = 'CLOSED'
+                  AND exit_time IS NOT NULL
                   AND exit_time >= ? AND exit_time <= ?
                 ORDER BY exit_time DESC
             """, (from_ms, to_ms))
