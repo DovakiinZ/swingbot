@@ -9,33 +9,34 @@ bybit_account_type: spot
 trading_mode: paper  # RISK OFF: Trading Engine Offline (Simulation Only)
 
 # -- Scan Speed ----------------------------------------------------------------
-scan_interval_minutes: 5  
+scan_interval_minutes: 5  # Increased resolution for weekend monitoring
 
 # -- Strategy & Scanning -------------------------------------------------------
 timeframe: "1h"
-lookback: 200  
-scan_top_n: 50  
+lookback: 200  # Extended lookback for weekend gap analysis
+scan_top_n: 50  # Broader scan to prepare for Monday open
 scanner:
   enabled: true
   breakout_lookback: 20
-  btc_correlation_factor: 0.8  
+  btc_correlation_factor: 0.8  # Monitor high-correlation moves
 
 # -- Multi-Timeframe Confluence ------------------------------------------------
-mtf_filter_enabled: true  
+mtf_filter_enabled: true  # Confluence enabled for higher-quality monitoring
 htf_timeframe: "4h"
 htf_ema_period: 200
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 75  
+min_score: 75  # Ultra-conservative gate for monitoring
 min_rr_ratio: 2.0
 volume_multiplier: 1.5
 signal_score_threshold: 65
 
 # -- Risk Management -----------------------------------------------------------
-risk_per_trade_percent: 0.0  
+# RISK OFF MODE: Settings kept for simulation tracking
+risk_per_trade_percent: 0.5  # Conservative 0.5% of capital per trade
 max_risk_per_trade_pct: 0.0
-max_open_positions: 0        
+max_open_positions: 0        # No live positions allowed
 max_portfolio_risk_percent: 0.0
 max_single_position_percent: 0.0
 daily_loss_limit_percent: 1.0
@@ -56,16 +57,16 @@ paper_start_balance_usdt: 1000.0
 
 # -- Dynamic Symbol Scanner ----------------------------------------------------
 dynamic_symbols: true
-max_symbols: 100  
+max_symbols: 100  # Maximum visibility for Monday setup detection
 min_24h_volume_usdt: 2000000
 
 # -- Sentiment (4-source engine) -----------------------------------------------
-sentiment_threshold: 10  
+sentiment_threshold: 10  # Conservative sentiment gate
 fear_greed_enabled: true
 
 # -- Account -------------------------------------------------------------------
 account_name: "Swingbot Choppy Market Optimized"
-live: false  
+live: false  # RISK OFF
 show_balances_on_startup: true
 
 # -- WebSocket Real-Time Monitor -----------------------------------------------
@@ -84,7 +85,7 @@ websocket:
 
 # -- ATR-Based Stop Loss / Take Profit -----------------------------------------
 atr_multiplier_sl: 2.2  # TIGHTENED: Better for choppy ranges
-atr_multiplier_tp: 4.5  # Adjusted for R:R confluence
+atr_multiplier_tp: 4.5
 
 # -- Notifications -------------------------------------------------------------
 notifications:
@@ -102,7 +103,7 @@ protections:
   stoploss_guard_enabled: true
   cooldown_enabled: true
   max_dd_enabled: true
-  max_dd_pct: 5.0  
+  max_dd_pct: 5.0  # Ultra-tight protection
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:
