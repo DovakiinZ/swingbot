@@ -9,34 +9,33 @@ bybit_account_type: spot
 trading_mode: paper  # RISK OFF: Trading Engine Offline (Simulation Only)
 
 # -- Scan Speed ----------------------------------------------------------------
-scan_interval_minutes: 5  # Increased resolution for weekend monitoring
+scan_interval_minutes: 5
 
 # -- Strategy & Scanning -------------------------------------------------------
 timeframe: "1h"
-lookback: 200  # Extended lookback for weekend gap analysis
-scan_top_n: 50  # Broader scan to prepare for Monday open
+lookback: 200
+scan_top_n: 50
 scanner:
   enabled: true
   breakout_lookback: 20
-  btc_correlation_factor: 0.8  # Monitor high-correlation moves
+  btc_correlation_factor: 0.8
 
 # -- Multi-Timeframe Confluence ------------------------------------------------
-mtf_filter_enabled: true  # Confluence enabled for higher-quality monitoring
+mtf_filter_enabled: true
 htf_timeframe: "4h"
 htf_ema_period: 200
 
 # -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
-min_score: 75  # Ultra-conservative gate for monitoring
+min_score: 75
 min_rr_ratio: 2.0
 volume_multiplier: 1.5
 signal_score_threshold: 65
 
 # -- Risk Management -----------------------------------------------------------
-# RISK OFF MODE: Settings kept for simulation tracking
-risk_per_trade_percent: 0.5  # Conservative 0.5% of capital per trade
+risk_per_trade_percent: 0.5
 max_risk_per_trade_pct: 0.0
-max_open_positions: 0        # No live positions allowed
+max_open_positions: 0
 max_portfolio_risk_percent: 0.0
 max_single_position_percent: 0.0
 daily_loss_limit_percent: 1.0
@@ -50,23 +49,23 @@ peak_balance_tracking: true
 drawdown_reset_threshold: 0.20
 
 # -- Market Regime Detection ---------------------------------------------------
-regime_adx_threshold: 15  # LOWERED: More sensitive to choppy/range-bound states
+regime_adx_threshold: 15
 
 # -- Paper Trading -------------------------------------------------------------
 paper_start_balance_usdt: 1000.0
 
 # -- Dynamic Symbol Scanner ----------------------------------------------------
 dynamic_symbols: true
-max_symbols: 100  # Maximum visibility for Monday setup detection
+max_symbols: 100
 min_24h_volume_usdt: 2000000
 
-# -- Sentiment (4-source engine) -----------------------------------------------
-sentiment_threshold: 10  # Conservative sentiment gate
+# -- Sentiment -----------------------------------------------------------------
+sentiment_threshold: 10
 fear_greed_enabled: true
 
 # -- Account -------------------------------------------------------------------
 account_name: "Swingbot Choppy Market Optimized"
-live: false  # RISK OFF
+live: false
 show_balances_on_startup: true
 
 # -- WebSocket Real-Time Monitor -----------------------------------------------
@@ -84,26 +83,27 @@ websocket:
     - WIF/USDT
 
 # -- ATR-Based Stop Loss / Take Profit -----------------------------------------
-atr_multiplier_sl: 2.2  # TIGHTENED: Better for choppy ranges
+atr_multiplier_sl: 2.2
 atr_multiplier_tp: 4.5
 
 # -- Notifications -------------------------------------------------------------
+# Set DISCORD_WEBHOOK_URL in the process environment; never commit the secret.
 notifications:
   discord:
     enabled: true
     channels:
-      general: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
-      trades: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
-      closed: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
-      warnings: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
-      reports: "https://discord.com/api/webhooks/1483934741265907772/LCHSthgJHFIpzvL0xlE79dTa2o1WnfU4aXzhDmw27Y4z5ray5FQrxIfHCQhO0TYlLR8s"
+      general: "${DISCORD_WEBHOOK_URL}"
+      trades: "${DISCORD_WEBHOOK_URL}"
+      closed: "${DISCORD_WEBHOOK_URL}"
+      warnings: "${DISCORD_WEBHOOK_URL}"
+      reports: "${DISCORD_WEBHOOK_URL}"
 
-# -- Beast Mode: Protections ---------------------------------------------------
+# -- Protections ---------------------------------------------------------------
 protections:
   stoploss_guard_enabled: true
   cooldown_enabled: true
   max_dd_enabled: true
-  max_dd_pct: 5.0  # Ultra-tight protection
+  max_dd_pct: 5.0
 
 # -- Dashboard -----------------------------------------------------------------
 dashboard:
