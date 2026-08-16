@@ -1,17 +1,11 @@
 # ==============================================================================
 # SWINGBOT CONFIGURATION — Optimized for Choppy Markets
 # ==============================================================================
-
-# -- Exchange ------------------------------------------------------------------
 trading_exchange: mexc
 market_data_exchange: bybit
 bybit_account_type: spot
-trading_mode: paper  # RISK OFF: Trading Engine Offline (Simulation Only)
-
-# -- Scan Speed ----------------------------------------------------------------
+trading_mode: paper
 scan_interval_minutes: 5
-
-# -- Strategy & Scanning -------------------------------------------------------
 timeframe: "1h"
 lookback: 200
 scan_top_n: 50
@@ -19,21 +13,15 @@ scanner:
   enabled: true
   breakout_lookback: 20
   btc_correlation_factor: 0.8
-
-# -- Multi-Timeframe Confluence ------------------------------------------------
 mtf_filter_enabled: true
 htf_timeframe: "4h"
 htf_ema_period: 200
-
-# -- Signal Quality Gates ------------------------------------------------------
 allow_short: true
 min_score: 75
 min_rr_ratio: 2.0
 volume_multiplier: 1.5
 signal_score_threshold: 65
-
-# -- Risk Management -----------------------------------------------------------
-risk_per_trade_percent: 0.5
+risk_per_trade_percent: 0.35
 max_risk_per_trade_pct: 0.0
 max_open_positions: 0
 max_portfolio_risk_percent: 0.0
@@ -42,33 +30,40 @@ daily_loss_limit_percent: 1.0
 max_daily_loss_usd: 10.0
 consecutive_loss_limit: 1
 api_failure_limit: 5
-
-# -- Compounding ---------------------------------------------------------------
 base_balance: 1000.0
 peak_balance_tracking: true
 drawdown_reset_threshold: 0.20
-
-# -- Market Regime Detection ---------------------------------------------------
 regime_adx_threshold: 15
-
-# -- Paper Trading -------------------------------------------------------------
 paper_start_balance_usdt: 1000.0
-
-# -- Dynamic Symbol Scanner ----------------------------------------------------
 dynamic_symbols: true
 max_symbols: 100
 min_24h_volume_usdt: 2000000
-
-# -- Sentiment -----------------------------------------------------------------
 sentiment_threshold: 10
 fear_greed_enabled: true
-
-# -- Account -------------------------------------------------------------------
-account_name: "Swingbot Choppy Market Optimized"
+account_name: "Swingbot Daily Quant Optimized"
 live: false
 show_balances_on_startup: true
-
-# -- WebSocket Real-Time Monitor -----------------------------------------------
+# Regime-aware RSI bounds and 20 EMA pullback/breakout controls.
+rsi_bounds:
+  trending_up: [30, 42]
+  trending_down: [58, 70]
+  ranging: [38, 62]
+  transition: [35, 65]
+ema_reversion:
+  enabled: true
+  period: 20
+  touch_tolerance_atr: 0.15
+  require_candle_reclaim: true
+breakout_consolidation:
+  enabled: true
+  lookback: 20
+  consolidation_bars: 5
+  max_range_atr: 2.0
+  volume_multiplier: 1.2
+bandit:
+  min_samples: 8
+  exploration_variance_floor: 0.08
+  regime_switch_decay: 0.90
 websocket:
   enabled: true
   symbols:
@@ -81,13 +76,8 @@ websocket:
     - AVAX/USDT
     - PEPE/USDT
     - WIF/USDT
-
-# -- ATR-Based Stop Loss / Take Profit -----------------------------------------
 atr_multiplier_sl: 2.2
 atr_multiplier_tp: 4.5
-
-# -- Notifications -------------------------------------------------------------
-# Set DISCORD_WEBHOOK_URL in the process environment; never commit the secret.
 notifications:
   discord:
     enabled: true
@@ -97,15 +87,11 @@ notifications:
       closed: "${DISCORD_WEBHOOK_URL}"
       warnings: "${DISCORD_WEBHOOK_URL}"
       reports: "${DISCORD_WEBHOOK_URL}"
-
-# -- Protections ---------------------------------------------------------------
 protections:
   stoploss_guard_enabled: true
   cooldown_enabled: true
   max_dd_enabled: true
   max_dd_pct: 5.0
-
-# -- Dashboard -----------------------------------------------------------------
 dashboard:
   enabled: true
   port: 8080
