@@ -21,7 +21,7 @@ min_score: 75
 min_rr_ratio: 2.0
 volume_multiplier: 1.5
 signal_score_threshold: 65
-risk_per_trade_percent: 0.35
+risk_per_trade_percent: 0.25
 max_risk_per_trade_pct: 0.0
 max_open_positions: 0
 max_portfolio_risk_percent: 0.0
@@ -47,8 +47,8 @@ show_balances_on_startup: true
 rsi_bounds:
   trending_up: [30, 42]
   trending_down: [58, 70]
-  ranging: [38, 62]
-  transition: [35, 65]
+  ranging: [40, 60]
+  transition: [38, 62]
 ema_reversion:
   enabled: true
   period: 20
